@@ -1,0 +1,140 @@
+# CODEOWNERS
+#
+# Define quem é responsável por revisar mudanças em cada área.
+# Formato: <path-pattern> <owners>
+#
+# Referência: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ============================================================================
+# DEFAULT: Maintainers revisam tudo que não tem owner específico
+# ============================================================================
+* @danvoulez
+
+# ============================================================================
+# GOVERNANCE & CONTRACTS (alto impacto, revisão obrigatória)
+# ============================================================================
+
+# Contratos de API — mudanças afetam todos os consumidores
+contracts/                      @danvoulez
+**/openapi.yaml                 @danvoulez
+**/openapi.yml                  @danvoulez
+
+# Policies — governam decisões do sistema
+policy/                         @danvoulez
+
+# Schemas — definem estrutura de dados canônica
+**/schemas/                     @danvoulez
+canon/                          @danvoulez
+
+# Documentação de arquitetura
+INTEGRATION_BLUEPRINT.md        @danvoulez
+GOVERNANCE.md                   @danvoulez
+SERVICE_TOPOLOGY.md             @danvoulez
+FUEL_SYSTEM_SPEC.md             @danvoulez
+
+# ============================================================================
+# CORE SERVICES
+# ============================================================================
+
+# logic.logline.world — CLI + Core (autoridade de domínio)
+logic.logline.world/            @danvoulez
+
+# llm-gateway — roteamento LLM + billing
+llm-gateway.logline.world/      @danvoulez
+
+# code247 — agente autônomo (alto risco)
+code247.logline.world/          @danvoulez
+
+# edge-control — control plane (governa o sistema)
+edge-control.logline.world/     @danvoulez
+
+# obs-api — observability (menor risco, mas ainda crítico)
+obs-api.logline.world/          @danvoulez
+
+# ============================================================================
+# SENSITIVE PATHS (sempre requerem revisão explícita)
+# ============================================================================
+
+# Auth — qualquer mudança em autenticação/autorização
+**/auth/                        @danvoulez
+**/auth.rs                      @danvoulez
+**/auth.ts                      @danvoulez
+**/*auth*.rs                    @danvoulez
+
+# Billing/Fuel — afeta cobrança
+**/billing/                     @danvoulez
+**/fuel/                        @danvoulez
+**/fuel.rs                      @danvoulez
+**/fuel*.rs                     @danvoulez
+
+# Migrations — mudanças de schema de banco
+**/migrations/                  @danvoulez
+**/supabase/migrations/         @danvoulez
+
+# Infrastructure
+**/infra/                       @danvoulez
+**/docker/                      @danvoulez
+**/*.dockerfile                 @danvoulez
+**/Dockerfile                   @danvoulez
+**/docker-compose*.yml          @danvoulez
+cloudflared-config.yml          @danvoulez
+doppler.yaml                    @danvoulez
+**/doppler.yaml                 @danvoulez
+ecosystem.config.cjs            @danvoulez
+
+# ============================================================================
+# CI/CD & WORKFLOWS (supply chain security)
+# ============================================================================
+
+.github/                        @danvoulez
+**/.github/                     @danvoulez
+
+# ============================================================================
+# SECURITY-SENSITIVE FILES
+# ============================================================================
+
+# Qualquer coisa com "secret", "key", "token", "credential"
+**/*secret*                     @danvoulez
+**/*credential*                 @danvoulez
+
+# Env examples (podem vazar estrutura)
+**/.env.example                 @danvoulez
+
+# Gitignore (pode expor arquivos acidentalmente)
+.gitignore                      @danvoulez
+**/.gitignore                   @danvoulez
+
+# ============================================================================
+# SCRIPTS OPERACIONAIS
+# ============================================================================
+
+scripts/                        @danvoulez
+
+# ============================================================================
+# DEPENDENCIES (supply chain)
+# ============================================================================
+
+Cargo.toml                      @danvoulez
+Cargo.lock                      @danvoulez
+**/Cargo.toml                   @danvoulez
+**/Cargo.lock                   @danvoulez
+package.json                    @danvoulez
+**/package.json                 @danvoulez
+package-lock.json               @danvoulez
+**/package-lock.json            @danvoulez
+
+# ============================================================================
+# NOTES
+# ============================================================================
+#
+# 1. Paths sensíveis (auth, billing, migrations, infra, workflows) são
+#    automaticamente escalados para CLOUD pelo policy-set.v1.1.json
+#
+# 2. Code247 não pode fazer auto-merge em PRs que tocam esses paths
+#    (score >= 3 = substantial = gates adicionais)
+#
+# 3. Para adicionar novos owners, criar PR editando este arquivo
+#    (requer review do owner atual)
+#
+# 4. @danvoulez = UBL Founder (único maintainer atual)
+#    Adicionar mais owners conforme equipe crescer
