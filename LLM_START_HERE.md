@@ -25,7 +25,7 @@ LogLine is a Rust-first ecosystem with 5 core services:
 
 | Document | Purpose |
 |----------|---------|
-| `INTEGRATION_BLUEPRINT.md` | **Source of Truth** — architecture and integration contracts |
+| `ARCHITECTURE.md` | **Source of Truth** — architecture and integration contracts |
 | `SERVICE_TOPOLOGY.md` | Network, ports, DNS, communication matrix |
 | `ECOSYSTEM_SERVICE_STANDARD_v1.md` | API/CLI/event standards |
 | `FUEL_SYSTEM_SPEC.md` | **Fuel specification** — 3-layer model, schemas, calculation, visualization |

@@ -65,7 +65,7 @@ pm2 status
 | Documento | Descrição |
 |-----------|-----------|
 | [LLM_START_HERE.md](LLM_START_HERE.md) | Guia para agentes LLM |
-| [INTEGRATION_BLUEPRINT.md](INTEGRATION_BLUEPRINT.md) | Arquitetura e contratos |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Arquitetura e contratos |
 | [SERVICE_TOPOLOGY.md](SERVICE_TOPOLOGY.md) | Rede, portas, DNS |
 | [FUEL_SYSTEM_SPEC.md](FUEL_SYSTEM_SPEC.md) | Sistema Fuel (3 camadas) |
 | [TASKLIST-GERAL.md](TASKLIST-GERAL.md) | Backlog atual |
