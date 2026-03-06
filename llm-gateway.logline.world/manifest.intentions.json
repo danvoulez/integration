@@ -1,0 +1,19 @@
+{
+  "schema_version": "manifest.intentions.v1",
+  "generated_at": "2026-03-06T00:00:00Z",
+  "service": "llm-gateway",
+  "release_version": "0.3.0",
+  "contracts": {
+    "modes": "2026-03-05",
+    "code247": "2026-03-06",
+    "response_envelope": "https://logline.world/schemas/response-envelope.v1.schema.json"
+  },
+  "defaults": {
+    "mode": "code",
+    "ci_target": "code247-ci/main",
+    "fallback_behavior": "provider-fallback-with-timeout"
+  },
+  "notes": [
+    "initial publish by Agent B hardening cycle"
+  ]
+}

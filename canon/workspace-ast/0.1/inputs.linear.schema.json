@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logline.world/canon/plugins/inputs.linear/0.1",
+  "title": "logline input plugin: linear",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["auth", "claim"],
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "default": "https://api.linear.app/graphql"
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token_env"],
+      "properties": {
+        "token_env": {
+          "type": "string",
+          "default": "LINEAR_API_KEY"
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy"],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["label", "assignee", "label_or_assignee"],
+          "default": "label"
+        },
+        "label": {
+          "type": "string",
+          "default": "agent:runner"
+        },
+        "assignee_is_bot_ok": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "filters": {
+      "type": ["object", "null"],
+      "default": null,
+      "additionalProperties": false,
+      "properties": {
+        "team_key": { "type": "string", "default": "" },
+        "project_name": { "type": "string", "default": "" },
+        "include_labels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        },
+        "exclude_labels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        },
+        "min_priority": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "max_priority": { "type": "integer", "minimum": 0, "maximum": 4 }
+      }
+    },
+    "polling": {
+      "type": ["object", "null"],
+      "default": null,
+      "additionalProperties": false,
+      "properties": {
+        "interval_seconds": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 3600,
+          "default": 90
+        },
+        "page_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250,
+          "default": 50
+        }
+      }
+    }
+  }
+}

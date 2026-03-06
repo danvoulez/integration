@@ -1,0 +1,244 @@
+{
+  "version": "events-registry.v1",
+  "description": "Canonical semantic event types for Fuel causal ledger.",
+  "global": {
+    "required_metadata_keys": [
+      "event_type",
+      "trace_id",
+      "source",
+      "actor_kind",
+      "outcome"
+    ],
+    "optional_metadata_keys": [
+      "parent_event_id",
+      "tenant_id",
+      "app_id",
+      "user_id",
+      "intention_id",
+      "job_id",
+      "issue_id",
+      "pr_id",
+      "deployment_id",
+      "model_id",
+      "latency_ms",
+      "tokens_in",
+      "tokens_out",
+      "cost_usd",
+      "reason_codes",
+      "evidence_refs"
+    ],
+    "enums": {
+      "actor_kind": ["human", "service", "system"],
+      "outcome": ["ok", "fail", "blocked", "rolled_back", "noop"],
+      "source": [
+        "edge-control",
+        "code247",
+        "llm-gateway",
+        "obs-api",
+        "linear",
+        "github",
+        "github-actions",
+        "scheduler"
+      ]
+    },
+    "limits": {
+      "max_reason_codes": 16,
+      "max_evidence_refs": 16
+    }
+  },
+  "reason_code_taxonomy": {
+    "common": [
+      "insufficient_context",
+      "ambiguous_request",
+      "unknown_impact",
+      "requires_cloud_review",
+      "cloud_required",
+      "local_ok",
+      "cost_sensitive"
+    ],
+    "security": [
+      "touches_auth",
+      "touches_billing",
+      "touches_permissions",
+      "touches_migrations",
+      "touches_infra",
+      "touches_workflows",
+      "secrets_suspected",
+      "pii_suspected",
+      "high_privilege_action"
+    ],
+    "change_scope": [
+      "diff_small",
+      "diff_medium",
+      "diff_large",
+      "files_few",
+      "files_many",
+      "blast_radius_low",
+      "blast_radius_high",
+      "refactor_wide"
+    ],
+    "quality": [
+      "tests_added",
+      "tests_missing",
+      "ci_flaky",
+      "ci_red_main",
+      "validation_insufficient"
+    ],
+    "ops": [
+      "error_spike",
+      "latency_spike",
+      "rate_limit_spike",
+      "provider_degraded",
+      "rollback_increase",
+      "cost_spike",
+      "new_cluster_emerging",
+      "policy_regression_suspected"
+    ]
+  },
+  "event_types": {
+    "human.requested_work": {
+      "domain": "ingress",
+      "required_metadata_keys": ["intent_text"]
+    },
+    "llm.intention_drafted": {
+      "domain": "intention",
+      "required_metadata_keys": ["draft_intention_id"]
+    },
+    "intention.draft.gate_decided": {
+      "domain": "transistor",
+      "required_metadata_keys": ["decision"]
+    },
+    "human.confirmed_intention": {
+      "domain": "intention",
+      "required_metadata_keys": ["intention_id"]
+    },
+    "human.rejected_intention": {
+      "domain": "intention",
+      "required_metadata_keys": ["draft_intention_id", "rejection_reason"]
+    },
+    "intention.synced_to_linear": {
+      "domain": "linear",
+      "required_metadata_keys": ["intention_id", "issue_id"]
+    },
+    "linear.issue.ready": {
+      "domain": "linear",
+      "required_metadata_keys": ["issue_id"]
+    },
+    "linear.issue.updated": {
+      "domain": "linear",
+      "required_metadata_keys": ["issue_id"]
+    },
+    "code247.job.claimed": {
+      "domain": "execution",
+      "required_metadata_keys": ["job_id", "issue_id"]
+    },
+    "code247.job.started": {
+      "domain": "execution",
+      "required_metadata_keys": ["job_id", "intention_id"]
+    },
+    "code247.plan.completed": {
+      "domain": "execution",
+      "required_metadata_keys": ["job_id"]
+    },
+    "code247.branch.created": {
+      "domain": "execution",
+      "required_metadata_keys": ["job_id", "branch_name"]
+    },
+    "code247.self_review.completed": {
+      "domain": "execution",
+      "required_metadata_keys": ["job_id"]
+    },
+    "code247.pr.opened": {
+      "domain": "execution",
+      "required_metadata_keys": ["job_id", "pr_id"]
+    },
+    "code247.job.completed": {
+      "domain": "execution",
+      "required_metadata_keys": ["job_id"]
+    },
+    "code247.job.failed": {
+      "domain": "execution",
+      "required_metadata_keys": ["job_id", "error_class"]
+    },
+    "pr.risk.opinion_emitted": {
+      "domain": "transistor",
+      "required_metadata_keys": ["pr_id", "signal", "confidence"]
+    },
+    "pr.risk.gate_decided": {
+      "domain": "transistor",
+      "required_metadata_keys": ["pr_id", "decision"]
+    },
+    "pr.auto_merge.candidate_marked": {
+      "domain": "transistor",
+      "required_metadata_keys": ["pr_id"]
+    },
+    "pr.review.cloud_required": {
+      "domain": "transistor",
+      "required_metadata_keys": ["pr_id", "reason_codes"]
+    },
+    "ci.started": {
+      "domain": "ci",
+      "required_metadata_keys": ["pr_id", "run_id"]
+    },
+    "ci.completed": {
+      "domain": "ci",
+      "required_metadata_keys": ["pr_id", "run_id", "status"]
+    },
+    "ci.flaky_detected": {
+      "domain": "ci",
+      "required_metadata_keys": ["pr_id", "run_id"]
+    },
+    "main.red_detected": {
+      "domain": "ci",
+      "required_metadata_keys": ["repo"]
+    },
+    "merge.completed": {
+      "domain": "delivery",
+      "required_metadata_keys": ["pr_id", "commit_sha"]
+    },
+    "deploy.started": {
+      "domain": "delivery",
+      "required_metadata_keys": ["deployment_id", "environment"]
+    },
+    "deploy.completed": {
+      "domain": "delivery",
+      "required_metadata_keys": ["deployment_id", "environment", "status"]
+    },
+    "linear.done_marked": {
+      "domain": "linear",
+      "required_metadata_keys": ["issue_id", "evidence_refs"]
+    },
+    "rollback.requested": {
+      "domain": "rollback",
+      "required_metadata_keys": ["target", "strategy"]
+    },
+    "rollback.started": {
+      "domain": "rollback",
+      "required_metadata_keys": ["target", "strategy"]
+    },
+    "rollback.completed": {
+      "domain": "rollback",
+      "required_metadata_keys": ["target", "status"]
+    },
+    "fuel.snapshot.created": {
+      "domain": "fuel-imaging",
+      "required_metadata_keys": ["snapshot_id", "window_start", "window_end"]
+    },
+    "fuel.diff.computed": {
+      "domain": "fuel-imaging",
+      "required_metadata_keys": ["from_snapshot_id", "to_snapshot_id", "drift_score"]
+    },
+    "fuel.diff.opinion_emitted": {
+      "domain": "transistor",
+      "required_metadata_keys": ["signal", "confidence"]
+    },
+    "fuel.diff.gate_decided": {
+      "domain": "transistor",
+      "required_metadata_keys": ["decision"]
+    },
+    "draft_intention.created_from_fuel": {
+      "domain": "intention",
+      "required_metadata_keys": ["draft_intention_id", "from_snapshot_id", "to_snapshot_id"]
+    }
+  }
+}

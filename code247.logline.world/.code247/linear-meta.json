@@ -1,0 +1,30 @@
+{
+  "ci": {
+    "ci_target": "logic-ci/main",
+    "queue_id": "q-00d70660"
+  },
+  "linear": {
+    "intentions": []
+  },
+  "observed_at": "2026-03-04T13:04:32.905420+00:00",
+  "project": "logic.logline.world",
+  "request_id": "00d70660-496c-4ca4-bb25-4228818bce0c",
+  "revision": "",
+  "source": "/tmp/code247_publish_script_test",
+  "sync": {
+    "errors": [
+      {
+        "code": "LINEAR_COMMENT_ERROR",
+        "intention_id": "it-1",
+        "message": "Linear retornou HTTP error"
+      }
+    ],
+    "observed_at": "2026-03-05T07:07:41.959654+00:00",
+    "project": "p1",
+    "request_id": "3ca780bb-0ea1-4b2a-9037-b403878bd720",
+    "synced": [],
+    "workspace": "w1"
+  },
+  "updated_at": "2026-03-04T16:00:00Z",
+  "workspace": "logline.world"
+}

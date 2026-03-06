@@ -1,0 +1,40 @@
+# Cloudflare Tunnel Configuration for logline.world
+#
+# AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
+# Source of truth: service_topology.json
+# Regenerate: node scripts/generate-topology-configs.mjs --apply-home
+
+tunnel: vvz-core
+credentials-file: ~/.cloudflared/975af37c-74a5-4995-992e-e9b0dba02322.json
+
+ingress:
+  # LLM Gateway - handles all LLM API calls
+  - hostname: llm-gateway.logline.world
+    service: http://127.0.0.1:7700
+  # Code247 - autonomous coding agent
+  - hostname: code247.logline.world
+    service: http://127.0.0.1:4001
+  # Obs API - observability dashboard (Next.js)
+  - hostname: obs-api.logline.world
+    service: http://127.0.0.1:3001
+  # Optional alias for operator UX
+  - hostname: obs.logline.world
+    service: http://127.0.0.1:3001
+  # Edge Control - orchestration + webhook surface
+  - hostname: edge-control.logline.world
+    service: http://127.0.0.1:18080
+  # Existing services
+  - hostname: agent256.ubl.agency
+    service: http://127.0.0.1:4256
+  - hostname: agent256.voulezvous.tv
+    service: http://127.0.0.1:4256
+  - hostname: core.voulezvous.tv
+    service: http://127.0.0.1:8787
+  # Fallback - must be last
+  -
+    service: http_status:404
+
+originRequest:
+  noTLSVerify: true
+  connectTimeout: 10s
+  httpRequestTimeout: 120s

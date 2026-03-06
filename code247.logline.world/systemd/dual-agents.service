@@ -1,0 +1,19 @@
+[Unit]
+Description=Dual Agents Rust Service
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/dual-agents
+ExecStart=/opt/dual-agents/target/release/dual-agents-rust
+Restart=always
+RestartSec=5
+User=ubuntu
+Environment=RUST_LOG=info
+Environment=DB_PATH=/opt/dual-agents/data/dual_agents.db
+Environment=EVIDENCE_PATH=/opt/dual-agents/evidence
+Environment=REPO_ROOT=/opt/dual-agents
+Environment=GIT_BRANCH=main
+Environment=HEALTH_PORT=4001
+
+[Install]
+WantedBy=multi-user.target

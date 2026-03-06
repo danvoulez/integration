@@ -1,0 +1,197 @@
+openapi: 3.0.3
+info:
+  title: logline.world inference-plane API
+  version: "1.0.0"
+  description: |
+    Internal inference APIs (LAB 512). JSON-only typed outputs.
+servers:
+  - url: http://lab-512.local:9090
+  - url: http://localhost:9090
+tags:
+  - name: Health
+  - name: Embeddings
+  - name: Intention
+  - name: PR
+  - name: Fuel
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+
+  /v1/embed:
+    post:
+      tags: [Embeddings]
+      summary: Generate embeddings for deterministic docs
+      security:
+        - InternalKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmbedRequestV1"
+      responses:
+        "200":
+          description: Embeddings generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedResponseV1"
+
+  /v1/intention/draft:
+    post:
+      tags: [Intention]
+      summary: Draft intention AST and rollback plan
+      security:
+        - InternalKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntentionDraftRequestV1"
+      responses:
+        "200":
+          description: Draft generated
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/draft-intention.v1.schema.json"
+
+  /v1/pr/risk:
+    post:
+      tags: [PR]
+      summary: Emit PR risk opinion
+      security:
+        - InternalKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrRiskRequestV1"
+      responses:
+        "200":
+          description: Opinion generated
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/opinion-signal.v1.schema.json"
+
+  /v1/fuel/diff/route:
+    post:
+      tags: [Fuel]
+      summary: Emit opinion from fuel snapshot diff pack
+      security:
+        - InternalKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelDiffRouteRequestV1"
+      responses:
+        "200":
+          description: Opinion generated
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/opinion-signal.v1.schema.json"
+
+components:
+  securitySchemes:
+    InternalKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Key
+      description: Shared secret accepted only from edge-control private network.
+
+  schemas:
+    EmbedRequestV1:
+      type: object
+      additionalProperties: false
+      required: [version, model, inputs]
+      properties:
+        version:
+          type: string
+          enum: ["embed.request.v1"]
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        inputs:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, text]
+            properties:
+              id:
+                type: string
+                minLength: 1
+                maxLength: 128
+              text:
+                type: string
+                minLength: 1
+                maxLength: 4000
+
+    EmbedResponseV1:
+      type: object
+      additionalProperties: false
+      required: [version, model, vectors]
+      properties:
+        version:
+          type: string
+          enum: ["embed.response.v1"]
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+        vectors:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, dims, vector]
+            properties:
+              id:
+                type: string
+                minLength: 1
+                maxLength: 128
+              dims:
+                type: integer
+                minimum: 8
+                maximum: 8192
+              vector:
+                type: array
+                minItems: 8
+                maxItems: 8192
+                items:
+                  type: number
+
+    IntentionDraftRequestV1:
+      $ref: "./edge-control.v1.openapi.yaml#/components/schemas/IntentionDraftRequestV1"
+
+    PrRiskRequestV1:
+      $ref: "./edge-control.v1.openapi.yaml#/components/schemas/PrRiskRequestV1"
+
+    FuelDiffRouteRequestV1:
+      $ref: "./edge-control.v1.openapi.yaml#/components/schemas/FuelDiffRouteRequestV1"

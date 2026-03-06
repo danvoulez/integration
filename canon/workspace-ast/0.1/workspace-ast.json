@@ -1,0 +1,276 @@
+{
+  "$id": "https://logline.world/canon/workspace-ast/0.1",
+  "canon_id": "logline.world/workspace",
+  "canon_version": "0.1",
+  "status": "canonical",
+  "description": "Formal AST that generates workspace manifests (permissive/strict) and input plugins (e.g. Linear).",
+  "generation_targets": [
+    {
+      "target_id": "workspace.manifest",
+      "outputs": {
+        "permissive_schema": "workspace.manifest.schema.json",
+        "strict_schema": "workspace.manifest.strict.schema.json"
+      }
+    },
+    {
+      "target_id": "inputs.linear",
+      "outputs": {
+        "schema": "inputs.linear.schema.json"
+      }
+    }
+  ],
+  "type_system": {
+    "types": {
+      "string": { "kind": "scalar", "name": "string" },
+      "boolean": { "kind": "scalar", "name": "boolean" },
+      "integer": { "kind": "scalar", "name": "integer" },
+      "path": { "kind": "scalar", "name": "string", "constraints": { "minLength": 1 } },
+      "pathArray": {
+        "kind": "array",
+        "items": { "ref": "path" },
+        "defaults": { "permissive": [], "strict": [] }
+      },
+      "stringArray": {
+        "kind": "array",
+        "items": { "ref": "string", "constraints": { "minLength": 1 } },
+        "defaults": { "permissive": [], "strict": [] }
+      }
+    }
+  },
+  "models": {
+    "workspace_manifest": {
+      "kind": "object",
+      "additional_properties": false,
+      "required": ["schema_version", "workspace", "constitution", "gates", "execution"],
+      "properties": {
+        "schema_version": {
+          "ref": "string",
+          "constraints": { "enum": ["1.0"] }
+        },
+        "workspace": {
+          "kind": "object",
+          "additional_properties": false,
+          "required": ["name", "id", "default_branch"],
+          "properties": {
+            "name": { "ref": "string", "constraints": { "minLength": 1 } },
+            "id": {
+              "ref": "string",
+              "constraints": { "pattern": "^[a-z0-9][a-z0-9\\-_.]{1,63}$" }
+            },
+            "default_branch": { "ref": "string", "defaults": { "permissive": "main", "strict": "main" } }
+          }
+        },
+        "constitution": {
+          "kind": "object",
+          "additional_properties": false,
+          "required": ["canon_docs", "adrs", "invariants", "roadmap", "runbooks"],
+          "properties": {
+            "canon_docs": { "ref": "pathArray" },
+            "adrs": { "ref": "pathArray" },
+            "invariants": { "ref": "pathArray" },
+            "roadmap": { "ref": "pathArray" },
+            "runbooks": { "ref": "pathArray" }
+          }
+        },
+        "contracts": {
+          "kind": "object",
+          "optional": true,
+          "additional_properties": false,
+          "required": ["schemas_paths", "openapi_paths", "events_registry"],
+          "properties": {
+            "schemas_paths": { "ref": "pathArray" },
+            "openapi_paths": { "ref": "pathArray" },
+            "events_registry": { "ref": "string", "defaults": { "permissive": "", "strict": "" } }
+          },
+          "defaults": { "permissive": null, "strict": null }
+        },
+        "policy": {
+          "kind": "object",
+          "optional": true,
+          "additional_properties": false,
+          "required": ["config_paths", "validation_command"],
+          "properties": {
+            "config_paths": { "ref": "pathArray" },
+            "validation_command": { "ref": "string", "defaults": { "permissive": "pnpm validate:config", "strict": "pnpm validate:config" } }
+          },
+          "defaults": { "permissive": null, "strict": null }
+        },
+        "gates": {
+          "kind": "object",
+          "additional_properties": false,
+          "required": ["gate0", "per_area"],
+          "properties": {
+            "gate0": {
+              "kind": "object",
+              "additional_properties": false,
+              "required": ["commands"],
+              "properties": {
+                "commands": { "ref": "stringArray" }
+              }
+            },
+            "per_area": {
+              "kind": "object",
+              "additional_properties": false,
+              "required": [],
+              "properties": {
+                "contracts": { "ref": "stringArray" },
+                "policy": { "ref": "stringArray" },
+                "tests": { "ref": "stringArray" },
+                "types": { "ref": "stringArray" },
+                "security": { "ref": "stringArray" }
+              },
+              "defaults": { "permissive": {}, "strict": {} }
+            }
+          }
+        },
+        "inputs": {
+          "kind": "object",
+          "optional": true,
+          "additional_properties": false,
+          "required": ["primary"],
+          "properties": {
+            "primary": {
+              "ref": "string",
+              "constraints": { "enum": ["linear", "jira", "github", "manual"] },
+              "defaults": { "permissive": "manual", "strict": "manual" }
+            },
+            "linear": { "ref_plugin": "inputs.linear", "optional": true }
+          },
+          "defaults": { "permissive": null, "strict": null }
+        },
+        "outputs": {
+          "kind": "object",
+          "optional": true,
+          "additional_properties": true,
+          "description": "Output plugins (PR comments, receipts, notifications). Canon allows this but does not require it.",
+          "defaults": { "permissive": null, "strict": null }
+        },
+        "execution": {
+          "kind": "object",
+          "additional_properties": false,
+          "required": [
+            "work_branch_prefix",
+            "max_files_changed",
+            "max_diff_lines",
+            "require_how_to_test",
+            "require_acceptance"
+          ],
+          "properties": {
+            "work_branch_prefix": { "ref": "string", "defaults": { "permissive": "runner/", "strict": "runner/" } },
+            "max_files_changed": { "ref": "integer", "constraints": { "minimum": 1, "maximum": 500 }, "defaults": { "permissive": 60, "strict": 60 } },
+            "max_diff_lines": { "ref": "integer", "constraints": { "minimum": 1, "maximum": 50000 }, "defaults": { "permissive": 1200, "strict": 1200 } },
+            "require_how_to_test": { "ref": "boolean", "defaults": { "permissive": true, "strict": true } },
+            "require_acceptance": { "ref": "boolean", "defaults": { "permissive": true, "strict": true } }
+          }
+        },
+        "x_extensions": {
+          "kind": "extension_policy",
+          "policy": "allow",
+          "pattern": "^x_",
+          "validation": "shallow",
+          "description": "Projects may add x_* keys without changing canon; generator must allow them in both permissive and strict."
+        }
+      }
+    }
+  },
+  "plugins": {
+    "inputs.linear": {
+      "$id": "https://logline.world/canon/plugins/inputs.linear/0.1",
+      "kind": "object",
+      "additional_properties": false,
+      "required": ["auth", "claim"],
+      "properties": {
+        "endpoint": {
+          "ref": "string",
+          "defaults": { "permissive": "https://api.linear.app/graphql", "strict": "https://api.linear.app/graphql" }
+        },
+        "auth": {
+          "kind": "object",
+          "additional_properties": false,
+          "required": ["token_env"],
+          "properties": {
+            "token_env": { "ref": "string", "defaults": { "permissive": "LINEAR_API_KEY", "strict": "LINEAR_API_KEY" } }
+          }
+        },
+        "claim": {
+          "kind": "object",
+          "additional_properties": false,
+          "required": ["strategy"],
+          "properties": {
+            "strategy": {
+              "ref": "string",
+              "constraints": { "enum": ["label", "assignee", "label_or_assignee"] },
+              "defaults": { "permissive": "label", "strict": "label" }
+            },
+            "label": { "ref": "string", "defaults": { "permissive": "agent:runner", "strict": "agent:runner" } },
+            "assignee_is_bot_ok": { "ref": "boolean", "defaults": { "permissive": true, "strict": true } }
+          }
+        },
+        "filters": {
+          "kind": "object",
+          "optional": true,
+          "additional_properties": false,
+          "required": [],
+          "properties": {
+            "team_key": { "ref": "string", "defaults": { "permissive": "", "strict": "" } },
+            "project_name": { "ref": "string", "defaults": { "permissive": "", "strict": "" } },
+            "include_labels": { "ref": "stringArray" },
+            "exclude_labels": { "ref": "stringArray" },
+            "min_priority": { "ref": "integer", "constraints": { "minimum": 0, "maximum": 4 } },
+            "max_priority": { "ref": "integer", "constraints": { "minimum": 0, "maximum": 4 } }
+          },
+          "defaults": { "permissive": null, "strict": null }
+        },
+        "polling": {
+          "kind": "object",
+          "optional": true,
+          "additional_properties": false,
+          "required": [],
+          "properties": {
+            "interval_seconds": { "ref": "integer", "constraints": { "minimum": 15, "maximum": 3600 }, "defaults": { "permissive": 90, "strict": 90 } },
+            "page_size": { "ref": "integer", "constraints": { "minimum": 1, "maximum": 250 }, "defaults": { "permissive": 50, "strict": 50 } }
+          },
+          "defaults": { "permissive": null, "strict": null }
+        }
+      }
+    }
+  },
+  "rules": {
+    "schema_level": [
+      {
+        "id": "STRICT-INPUT-001",
+        "mode": "strict_only",
+        "description": "If inputs.primary == 'linear', then inputs.linear must be present.",
+        "if": { "path": "inputs.primary", "equals": "linear" },
+        "then": { "require": ["inputs.linear"] }
+      }
+    ],
+    "runtime_level": [
+      {
+        "id": "RUNNER-READINESS-001",
+        "description": "If execution.require_acceptance is true, missing Acceptance makes WorkItem not executable.",
+        "if": { "path": "execution.require_acceptance", "equals": true },
+        "then": { "enforce": { "readiness_requires": ["acceptance"] } }
+      },
+      {
+        "id": "RUNNER-READINESS-002",
+        "description": "If execution.require_how_to_test is true, missing How-to-test makes WorkItem not executable.",
+        "if": { "path": "execution.require_how_to_test", "equals": true },
+        "then": { "enforce": { "readiness_requires": ["how_to_test"] } }
+      }
+    ]
+  },
+  "derivation_policy": {
+    "permissive": {
+      "defaults": "apply",
+      "unknown_keys": "deny_except_x_extensions",
+      "conditional_rules": "off"
+    },
+    "strict": {
+      "defaults": "apply",
+      "unknown_keys": "deny_except_x_extensions",
+      "conditional_rules": "on",
+      "apply_schema_rules": ["STRICT-INPUT-001"]
+    }
+  }
+}

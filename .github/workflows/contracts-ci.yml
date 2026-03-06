@@ -1,0 +1,81 @@
+name: Contracts and Rust Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate canonical contracts
+        run: ./scripts/validate-contracts.sh
+
+  edge-control-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check edge-control
+        run: cargo check --manifest-path edge-control.logline.world/Cargo.toml
+
+  llm-gateway-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check llm-gateway
+        run: cargo check --manifest-path llm-gateway.logline.world/Cargo.toml
+
+  logic-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check logic workspace
+        run: cargo check --manifest-path logic.logline.world/Cargo.toml --workspace
+
+  integration-severe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run integration severe harness
+        run: ./scripts/integration-severe.sh
+
+      - name: Upload integration severe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-severe-report
+          path: artifacts/integration-severe-report.json
+          if-no-files-found: ignore

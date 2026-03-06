@@ -1,0 +1,22 @@
+services:
+  dual-agents:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: always
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - ../.env
+    volumes:
+      - ../data:/app/data
+      - ${REPO_ROOT}:/repo:rw
+    ports:
+      - "4000:4000"
+      - "4001:4001"
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

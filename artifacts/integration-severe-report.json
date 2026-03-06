@@ -1,0 +1,288 @@
+{
+  "report_version": "logic.integration-severe.report.v1",
+  "request_id": "logic-harness-34e53968-5c66-49b7-978d-f1951df6f1eb",
+  "generated_at": "2026-03-06T11:13:56.706317+00:00",
+  "root": "/Users/ubl-ops/Integration",
+  "pipeline": "smoke+contracts+integration-severe+report",
+  "steps": [
+    {
+      "id": "STEP-000",
+      "title": "Smoke gate (script integrity)",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 2,
+      "command": {
+        "argv": [
+          "bash",
+          "-n",
+          "scripts/smoke.sh"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0
+    },
+    {
+      "id": "STEP-001",
+      "title": "Sync Canon schemas + generated TypeScript check",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 15,
+      "command": {
+        "argv": [
+          "bash",
+          "scripts/sync-canon-schemas.sh",
+          "--check"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "[canon-sync] ok"
+    },
+    {
+      "id": "STEP-002",
+      "title": "Generate cookbook from canonical capability catalog",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 10066,
+      "command": {
+        "argv": [
+          "node",
+          "scripts/generate-cookbook.mjs"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "Cookbook generated: contracts/generated/cookbook.capabilities.v1.md"
+    },
+    {
+      "id": "STEP-003",
+      "title": "Validate contracts/policy/openapi globally",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 2704,
+      "command": {
+        "argv": [
+          "bash",
+          "scripts/validate-contracts.sh"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "[contracts] validating canonical files from /Users/ubl-ops/Integration\n[contracts] generating capability catalog\nCapability catalog generated: contracts/generated/capability-catalog.v1.json\nCapabilities: 127 (cli=80, api=47)\ncontracts validation ok: /Users/ubl-ops/Integration\n[contracts] validation complete",
+      "stderr": "Compiling logline-cli v0.1.0 (/Users/ubl-ops/Integration/logic.logline.world/crates/logline-cli)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.66s\n     Running `/Users/ubl-ops/.cargo/shared-target/debug/contracts_validate --root /Users/ubl-ops/Integration`"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "TST-001",
+      "title": "Smoke script integrity for full stack checks",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 3,
+      "command": {
+        "argv": [
+          "bash",
+          "-n",
+          "scripts/smoke.sh"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0
+    },
+    {
+      "id": "TST-002",
+      "title": "Done transition blocked without canonical path",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 10935,
+      "command": {
+        "argv": [
+          "cargo",
+          "test",
+          "-q",
+          "--manifest-path",
+          "code247.logline.world/Cargo.toml",
+          "canonical_done_path_requires_ready_for_release"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "running 1 test\n.\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "stderr": "warning: struct `AnthropicAdapter` is never constructed\n --> src/adapters_rs.rs:9:12\n  |\n9 | pub struct AnthropicAdapter {\n  |            ^^^^^^^^^^^^^^^^\n  |\n  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: associated items `new`, `plan`, and `review` are never used\n  --> src/adapters_rs.rs:16:12\n   |\n15 | impl AnthropicAdapter {\n   | --------------------- associated items in this implementation\n16 |     pub fn new(model: String, api_key: Option<String>) -> Self {\n   |            ^^^\n...\n24 |     pub async fn plan(&self, prompt: &str) -> Result<String> {\n   |                  ^^^^\n...\n53 |     pub async fn review(&self, code: &str) -> Result<ReviewOutput> {\n   |                  ^^^^^^\n\nwarning: struct `OllamaAdapter` is never constructed\n   --> src/adapters_rs.rs:104:12\n    |\n104 | pub struct OllamaAdapter {\n    |            ^^^^^^^^^^^^^\n\nwarning: associated items `new` and `code` are never used\n   --> src/adapters_rs.rs:111:12\n    |\n110 | impl OllamaAdapter {\n    | ------------------ associated items in this implementation\n111 |     pub fn new(model: String, base_url: String) -> Self {\n    |            ^^^\n...\n119 |     pub async fn code(&self, plan: &str) -> Result<String> {\n    |                  ^^^^\n\nwarning: field `usage` is never read\n   --> src/adapters_rs.rs:158:5\n    |\n156 | struct GatewayResponse {\n    |        --------------- field in this struct\n157 |     choices: Vec<GatewayChoice>,\n158 |     usage: Option<GatewayUsage>,\n    |     ^^^^^\n    |\n    = note: `GatewayResponse` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n\nwarning: fields `prompt_tokens`, `completion_tokens`, and `total_tokens` are never read\n   --> src/adapters_rs.rs:173:5\n    |\n172 | struct GatewayUsage {\n    |        ------------ fields in this struct\n173 |     prompt_tokens: i32,\n    |     ^^^^^^^^^^^^^\n174 |     completion_tokens: i32,\n    |     ^^^^^^^^^^^^^^^^^\n175 |     total_tokens: i32,\n    |     ^^^^^^^^^^^^\n    |\n    = note: `GatewayUsage` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n\nwarning: method `bulk_update_issue_state` is never used\n   --> src/adapters_rs.rs:600:18\n    |\n541 | impl LinearAdapter {\n    | ------------------ method in this implementation\n...\n600 |     pub async fn bulk_update_issue_state(\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: struct `AnthropicMessageResponse` is never constructed\n   --> src/adapters_rs.rs:873:8\n    |\n873 | struct AnthropicMessageResponse {\n    |        ^^^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: method `concat_text` is never used\n   --> src/adapters_rs.rs:878:8\n    |\n877 | impl AnthropicMessageResponse {\n    | ----------------------------- method in this implementation\n878 |     fn concat_text(&self) -> String {\n    |        ^^^^^^^^^^^\n\nwarning: struct `AnthropicContent` is never constructed\n   --> src/adapters_rs.rs:888:8\n    |\n888 | struct AnthropicContent {\n    |        ^^^^^^^^^^^^^^^^\n\nwarning: struct `OllamaGenerateResponse` is never constructed\n   --> src/adapters_rs.rs:893:8\n    |\n893 | struct OllamaGenerateResponse {\n    |        ^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: fields `anthropic_model`, `anthropic_api_key`, `ollama_model`, and `ollama_base_url` are never read\n  --> src/config_rs.rs:16:9\n   |\n 6 | pub struct Config {\n   |            ------ fields in this struct\n...\n16 |     pub anthropic_model: String,\n   |         ^^^^^^^^^^^^^^^\n17 |     pub anthropic_api_key: Option<String>,\n   |         ^^^^^^^^^^^^^^^^^\n18 |     pub ollama_model: String,\n   |         ^^^^^^^^^^^^\n19 |     pub ollama_base_url: String,\n   |         ^^^^^^^^^^^^^^^\n   |\n   = note: `Config` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis"
+    },
+    {
+      "id": "TST-003",
+      "title": "Webhook integrity signature validation",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 359,
+      "command": {
+        "argv": [
+          "cargo",
+          "test",
+          "-q",
+          "--manifest-path",
+          "code247.logline.world/Cargo.toml",
+          "validates_linear_signature_hex"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "running 1 test\n.\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "stderr": "warning: struct `AnthropicAdapter` is never constructed\n --> src/adapters_rs.rs:9:12\n  |\n9 | pub struct AnthropicAdapter {\n  |            ^^^^^^^^^^^^^^^^\n  |\n  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: associated items `new`, `plan`, and `review` are never used\n  --> src/adapters_rs.rs:16:12\n   |\n15 | impl AnthropicAdapter {\n   | --------------------- associated items in this implementation\n16 |     pub fn new(model: String, api_key: Option<String>) -> Self {\n   |            ^^^\n...\n24 |     pub async fn plan(&self, prompt: &str) -> Result<String> {\n   |                  ^^^^\n...\n53 |     pub async fn review(&self, code: &str) -> Result<ReviewOutput> {\n   |                  ^^^^^^\n\nwarning: struct `OllamaAdapter` is never constructed\n   --> src/adapters_rs.rs:104:12\n    |\n104 | pub struct OllamaAdapter {\n    |            ^^^^^^^^^^^^^\n\nwarning: associated items `new` and `code` are never used\n   --> src/adapters_rs.rs:111:12\n    |\n110 | impl OllamaAdapter {\n    | ------------------ associated items in this implementation\n111 |     pub fn new(model: String, base_url: String) -> Self {\n    |            ^^^\n...\n119 |     pub async fn code(&self, plan: &str) -> Result<String> {\n    |                  ^^^^\n\nwarning: field `usage` is never read\n   --> src/adapters_rs.rs:158:5\n    |\n156 | struct GatewayResponse {\n    |        --------------- field in this struct\n157 |     choices: Vec<GatewayChoice>,\n158 |     usage: Option<GatewayUsage>,\n    |     ^^^^^\n    |\n    = note: `GatewayResponse` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n\nwarning: fields `prompt_tokens`, `completion_tokens`, and `total_tokens` are never read\n   --> src/adapters_rs.rs:173:5\n    |\n172 | struct GatewayUsage {\n    |        ------------ fields in this struct\n173 |     prompt_tokens: i32,\n    |     ^^^^^^^^^^^^^\n174 |     completion_tokens: i32,\n    |     ^^^^^^^^^^^^^^^^^\n175 |     total_tokens: i32,\n    |     ^^^^^^^^^^^^\n    |\n    = note: `GatewayUsage` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n\nwarning: method `bulk_update_issue_state` is never used\n   --> src/adapters_rs.rs:600:18\n    |\n541 | impl LinearAdapter {\n    | ------------------ method in this implementation\n...\n600 |     pub async fn bulk_update_issue_state(\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: struct `AnthropicMessageResponse` is never constructed\n   --> src/adapters_rs.rs:873:8\n    |\n873 | struct AnthropicMessageResponse {\n    |        ^^^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: method `concat_text` is never used\n   --> src/adapters_rs.rs:878:8\n    |\n877 | impl AnthropicMessageResponse {\n    | ----------------------------- method in this implementation\n878 |     fn concat_text(&self) -> String {\n    |        ^^^^^^^^^^^\n\nwarning: struct `AnthropicContent` is never constructed\n   --> src/adapters_rs.rs:888:8\n    |\n888 | struct AnthropicContent {\n    |        ^^^^^^^^^^^^^^^^\n\nwarning: struct `OllamaGenerateResponse` is never constructed\n   --> src/adapters_rs.rs:893:8\n    |\n893 | struct OllamaGenerateResponse {\n    |        ^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: fields `anthropic_model`, `anthropic_api_key`, `ollama_model`, and `ollama_base_url` are never read\n  --> src/config_rs.rs:16:9\n   |\n 6 | pub struct Config {\n   |            ------ fields in this struct\n...\n16 |     pub anthropic_model: String,\n   |         ^^^^^^^^^^^^^^^\n17 |     pub anthropic_api_key: Option<String>,\n   |         ^^^^^^^^^^^^^^^^^\n18 |     pub ollama_model: String,\n   |         ^^^^^^^^^^^^\n19 |     pub ollama_base_url: String,\n   |         ^^^^^^^^^^^^^^^\n   |\n   = note: `Config` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis"
+    },
+    {
+      "id": "TST-004",
+      "title": "Gateway resilience baseline (compile gate)",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 4593,
+      "command": {
+        "argv": [
+          "cargo",
+          "check",
+          "--manifest-path",
+          "llm-gateway.logline.world/Cargo.toml"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stderr": "Compiling ring v0.17.14\n    Checking jsonwebtoken v9.3.1\n    Checking llm-gateway v0.1.0 (/Users/ubl-ops/Integration/llm-gateway.logline.world)\nwarning: fields `exp` and `aud` are never read\n   --> src/main.rs:344:5\n    |\n340 | struct SupabaseJwtClaims {\n    |        ----------------- fields in this struct\n...\n344 |     exp: usize,\n    |     ^^^\n345 |     /// Audience (usually the Supabase project URL)\n346 |     aud: Option<String>,\n    |     ^^^\n    |\n    = note: `SupabaseJwtClaims` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: method `cleanup` is never used\n   --> src/batch.rs:256:12\n    |\n 44 | impl BatchQueue {\n    | --------------- method in this implementation\n...\n256 |     pub fn cleanup(&self, retention_days: u32) -> anyhow::Result<u64> {\n    |            ^^^^^^^\n\nwarning: fields `retry_delay` and `max_retries` are never read\n  --> src/batch_worker.rs:24:9\n   |\n18 | pub struct BatchWorkerConfig {\n   |            ----------------- fields in this struct\n...\n24 |     pub retry_delay: Duration,\n   |         ^^^^^^^^^^^\n25 |     /// Maximum retries before permanent failure\n26 |     pub max_retries: u32,\n   |         ^^^^^^^^^^^\n\nwarning: method `fuel_source` is never used\n  --> src/db.rs:89:12\n   |\n32 | impl ClientIdentity {\n   | ------------------- method in this implementation\n...\n89 |     pub fn fuel_source(&self) -> &str {\n   |            ^^^^^^^^^^^\n\nwarning: fields `total_duration`, `prompt_eval_count`, and `eval_count` are never read\n   --> src/types.rs:148:9\n    |\n145 | pub struct OllamaChatResponse {\n    |            ------------------ fields in this struct\n...\n148 |     pub total_duration: Option<u64>,\n    |         ^^^^^^^^^^^^^^\n149 |     pub load_duration: Option<u64>,\n150 |     pub prompt_eval_count: Option<u64>,\n    |         ^^^^^^^^^^^^^^^^^\n151 |     pub prompt_eval_duration: Option<u64>,\n152 |     pub eval_count: Option<u64>,\n    |         ^^^^^^^^^^\n    |\n    = note: `OllamaChatResponse` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n\nwarning: `llm-gateway` (bin \"llm-gateway\") generated 5 warnings\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.53s"
+    },
+    {
+      "id": "TST-005",
+      "title": "Red-main policy guard exists in runner path",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 19,
+      "command": {
+        "argv": [
+          "rg",
+          "-n",
+          "red-main|red_main",
+          "code247.logline.world/src/test_runner_rs.rs"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "15:    red_main_enforced: bool,\n16:    red_main_flag_path: PathBuf,\n29:    pub red_main_blocked: bool,\n40:        red_main_enforced: bool,\n41:        red_main_flag_path: impl Into<PathBuf>,\n48:            red_main_enforced,\n49:            red_main_flag_path: red_main_flag_path.into(),\n70:        if self.red_main_enforced && self.red_main_flag_path.exists() {\n72:                \"red-main ativo: flag encontrada em '{}'; novas features pausadas até restaurar main verde\",\n73:                self.red_main_flag_path.display()\n82:                red_main_blocked: true,\n157:            red_main_blocked: false,"
+    },
+    {
+      "id": "TST-006",
+      "title": "Flaky retry policy guard exists in runner path",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 19,
+      "command": {
+        "argv": [
+          "rg",
+          "-n",
+          "flaky|retry|rerun",
+          "code247.logline.world/src/test_runner_rs.rs"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "14:    flaky_reruns: u8,\n28:    pub flaky_recovered: bool,\n39:        flaky_reruns: u8,\n47:            flaky_reruns,\n81:                flaky_recovered: false,\n92:        let cargo = run_cmd_with_retry(\n96:            self.flaky_reruns,\n106:        if cargo.recovered_after_retry {\n108:                .push(\"flaky_detected: cargo check recuperou após re-run automático\".to_string());\n111:        let npm = run_cmd_with_retry(\n115:            self.flaky_reruns,\n126:            if run.recovered_after_retry {\n128:                    \"flaky_detected: npm run typecheck recuperou após re-run automático\"\n140:        let (npm_output, npm_attempts, npm_flaky_recovered) = match npm {\n144:                run.recovered_after_retry,\n148:        let flaky_recovered = cargo.recovered_after_retry || npm_flaky_recovered;\n156:            flaky_recovered,\n177:    recovered_after_retry: bool,\n180:async fn run_cmd_with_retry(\n184:    flaky_reruns: u8,\n189:    let max_attempts = flaky_reruns.saturating_add(1).max(1);\n214:                recovered_after_retry: attempt > 1,\n223:        recovered_after_retry: false,"
+    },
+    {
+      "id": "TST-007",
+      "title": "Fuel baseline migration guard present",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 19,
+      "command": {
+        "argv": [
+          "rg",
+          "-n",
+          "fuel_window_baseline|baseline",
+          "logic.logline.world/supabase/migrations/20260306000016_fuel_window_baseline.sql"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "1:-- Migration 016: Fuel window metrics + seasonal baseline envelope\n48:-- Seasonal baseline envelope by weekday/hour/5-min slot.\n49:create or replace view fuel_window_baseline_v1 as\n67:  min(window_start) as baseline_window_from,\n68:  max(window_start) as baseline_window_to,\n76:-- Realtime view joining current buckets with baseline envelope.\n121:left join fuel_window_baseline_v1 wb"
+    },
+    {
+      "id": "TST-008",
+      "title": "Auth hardening regression gate (logline-auth tests)",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 3898,
+      "command": {
+        "argv": [
+          "cargo",
+          "test",
+          "-q",
+          "--manifest-path",
+          "logic.logline.world/Cargo.toml",
+          "-p",
+          "logline-auth"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "running 5 tests\n.....\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nrunning 1 test\n.\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\nall doctests ran in 0.72s; merged doctests compilation took 0.38s"
+    },
+    {
+      "id": "TST-009",
+      "title": "Fuel reconciliation drift contracts present",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 21,
+      "command": {
+        "argv": [
+          "rg",
+          "-n",
+          "usd_settled|usd_estimated|drift",
+          "logic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql",
+          "logic.logline.world/supabase/migrations/20260305000014_fuel_reconciler_rpc_security.sql"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "logic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:1:-- Migration 012: Fuel L0 valuation reconciler + drift view\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:71:    usd_estimated,\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:72:    usd_settled,\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:84:    (p.units * p.price_per_unit) as usd_estimated,\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:85:    null::numeric as usd_settled,\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:106:      usd_estimated = excluded.usd_estimated,\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:111:        when fuel_valuations.usd_settled is not null then fuel_valuations.precision_level\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:115:        when fuel_valuations.usd_settled is not null then fuel_valuations.confidence\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:120:    where fuel_valuations.usd_settled is null;\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:127:-- Daily drift summary for observability.\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:128:create or replace view fuel_valuation_drift_v1 as\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:135:  sum(coalesce(fv.usd_estimated, 0)) as usd_estimated_total,\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:136:  sum(coalesce(fv.usd_settled, 0)) as usd_settled_total,\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:137:  sum(coalesce(fv.usd_settled, fv.usd_estimated, 0)) as usd_effective_total,\nlogic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql:138:  sum(coalesce(fv.usd_settled, 0) - coalesce(fv.usd_estimated, 0)) as usd_drift_total"
+    },
+    {
+      "id": "TST-010",
+      "title": "Webhook timestamp robustness under malformed payloads",
+      "applicable": true,
+      "status": "ok",
+      "elapsed_ms": 288,
+      "command": {
+        "argv": [
+          "cargo",
+          "test",
+          "-q",
+          "--manifest-path",
+          "code247.logline.world/Cargo.toml",
+          "extracts_webhook_timestamp_number_or_string"
+        ],
+        "cwd": "/Users/ubl-ops/Integration",
+        "env": {}
+      },
+      "exit_code": 0,
+      "stdout": "running 1 test\n.\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "stderr": "warning: struct `AnthropicAdapter` is never constructed\n --> src/adapters_rs.rs:9:12\n  |\n9 | pub struct AnthropicAdapter {\n  |            ^^^^^^^^^^^^^^^^\n  |\n  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\nwarning: associated items `new`, `plan`, and `review` are never used\n  --> src/adapters_rs.rs:16:12\n   |\n15 | impl AnthropicAdapter {\n   | --------------------- associated items in this implementation\n16 |     pub fn new(model: String, api_key: Option<String>) -> Self {\n   |            ^^^\n...\n24 |     pub async fn plan(&self, prompt: &str) -> Result<String> {\n   |                  ^^^^\n...\n53 |     pub async fn review(&self, code: &str) -> Result<ReviewOutput> {\n   |                  ^^^^^^\n\nwarning: struct `OllamaAdapter` is never constructed\n   --> src/adapters_rs.rs:104:12\n    |\n104 | pub struct OllamaAdapter {\n    |            ^^^^^^^^^^^^^\n\nwarning: associated items `new` and `code` are never used\n   --> src/adapters_rs.rs:111:12\n    |\n110 | impl OllamaAdapter {\n    | ------------------ associated items in this implementation\n111 |     pub fn new(model: String, base_url: String) -> Self {\n    |            ^^^\n...\n119 |     pub async fn code(&self, plan: &str) -> Result<String> {\n    |                  ^^^^\n\nwarning: field `usage` is never read\n   --> src/adapters_rs.rs:158:5\n    |\n156 | struct GatewayResponse {\n    |        --------------- field in this struct\n157 |     choices: Vec<GatewayChoice>,\n158 |     usage: Option<GatewayUsage>,\n    |     ^^^^^\n    |\n    = note: `GatewayResponse` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n\nwarning: fields `prompt_tokens`, `completion_tokens`, and `total_tokens` are never read\n   --> src/adapters_rs.rs:173:5\n    |\n172 | struct GatewayUsage {\n    |        ------------ fields in this struct\n173 |     prompt_tokens: i32,\n    |     ^^^^^^^^^^^^^\n174 |     completion_tokens: i32,\n    |     ^^^^^^^^^^^^^^^^^\n175 |     total_tokens: i32,\n    |     ^^^^^^^^^^^^\n    |\n    = note: `GatewayUsage` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n\nwarning: method `bulk_update_issue_state` is never used\n   --> src/adapters_rs.rs:600:18\n    |\n541 | impl LinearAdapter {\n    | ------------------ method in this implementation\n...\n600 |     pub async fn bulk_update_issue_state(\n    |                  ^^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: struct `AnthropicMessageResponse` is never constructed\n   --> src/adapters_rs.rs:873:8\n    |\n873 | struct AnthropicMessageResponse {\n    |        ^^^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: method `concat_text` is never used\n   --> src/adapters_rs.rs:878:8\n    |\n877 | impl AnthropicMessageResponse {\n    | ----------------------------- method in this implementation\n878 |     fn concat_text(&self) -> String {\n    |        ^^^^^^^^^^^\n\nwarning: struct `AnthropicContent` is never constructed\n   --> src/adapters_rs.rs:888:8\n    |\n888 | struct AnthropicContent {\n    |        ^^^^^^^^^^^^^^^^\n\nwarning: struct `OllamaGenerateResponse` is never constructed\n   --> src/adapters_rs.rs:893:8\n    |\n893 | struct OllamaGenerateResponse {\n    |        ^^^^^^^^^^^^^^^^^^^^^^\n\nwarning: fields `anthropic_model`, `anthropic_api_key`, `ollama_model`, and `ollama_base_url` are never read\n  --> src/config_rs.rs:16:9\n   |\n 6 | pub struct Config {\n   |            ------ fields in this struct\n...\n16 |     pub anthropic_model: String,\n   |         ^^^^^^^^^^^^^^^\n17 |     pub anthropic_api_key: Option<String>,\n   |         ^^^^^^^^^^^^^^^^^\n18 |     pub ollama_model: String,\n   |         ^^^^^^^^^^^^\n19 |     pub ollama_base_url: String,\n   |         ^^^^^^^^^^^^^^^\n   |\n   = note: `Config` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis"
+    }
+  ],
+  "summary": {
+    "ok": true,
+    "scenario_failures": 0,
+    "scenario_skipped": 0,
+    "step_failures": 0
+  }
+}

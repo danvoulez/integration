@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logline.world/canon/workspace.manifest/0.1/strict",
+  "title": "logline workspace manifest (permissive)",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "schema_version",
+    "workspace",
+    "constitution",
+    "gates",
+    "execution"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "1.0"
+      ]
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "id",
+        "default_branch"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9\\-_.]{1,63}$"
+        },
+        "default_branch": {
+          "type": "string",
+          "default": "main"
+        }
+      }
+    },
+    "constitution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canon_docs",
+        "adrs",
+        "invariants",
+        "roadmap",
+        "runbooks"
+      ],
+      "properties": {
+        "canon_docs": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "adrs": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "invariants": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "roadmap": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "runbooks": {
+          "$ref": "#/$defs/pathArray"
+        }
+      }
+    },
+    "contracts": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "default": null,
+      "additionalProperties": false,
+      "required": [
+        "schemas_paths",
+        "openapi_paths",
+        "events_registry"
+      ],
+      "properties": {
+        "schemas_paths": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "openapi_paths": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "events_registry": {
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "policy": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "default": null,
+      "additionalProperties": false,
+      "required": [
+        "config_paths",
+        "validation_command"
+      ],
+      "properties": {
+        "config_paths": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "validation_command": {
+          "type": "string",
+          "default": "pnpm validate:config"
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gate0",
+        "per_area"
+      ],
+      "properties": {
+        "gate0": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commands"
+          ],
+          "properties": {
+            "commands": {
+              "$ref": "#/$defs/stringArray"
+            }
+          }
+        },
+        "per_area": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "properties": {
+            "contracts": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "policy": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "tests": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "types": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "security": {
+              "$ref": "#/$defs/stringArray"
+            }
+          }
+        }
+      }
+    },
+    "inputs": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "default": null,
+      "additionalProperties": false,
+      "required": [
+        "primary"
+      ],
+      "properties": {
+        "primary": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "jira",
+            "github",
+            "manual"
+          ],
+          "default": "manual"
+        },
+        "linear": {
+          "$ref": "#/$defs/input_linear"
+        }
+      }
+    },
+    "outputs": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "default": null,
+      "additionalProperties": true,
+      "description": "Output plugins (PR comments, receipts, notifications). Canon allows this but does not require it."
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "work_branch_prefix",
+        "max_files_changed",
+        "max_diff_lines",
+        "require_how_to_test",
+        "require_acceptance"
+      ],
+      "properties": {
+        "work_branch_prefix": {
+          "type": "string",
+          "default": "runner/"
+        },
+        "max_files_changed": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 60
+        },
+        "max_diff_lines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50000,
+          "default": 1200
+        },
+        "require_how_to_test": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_acceptance": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pathArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/path"
+      },
+      "default": []
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "input_linear": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "auth",
+        "claim"
+      ],
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "default": "https://api.linear.app/graphql"
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token_env"
+          ],
+          "properties": {
+            "token_env": {
+              "type": "string",
+              "default": "LINEAR_API_KEY"
+            }
+          }
+        },
+        "claim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "strategy"
+          ],
+          "properties": {
+            "strategy": {
+              "type": "string",
+              "enum": [
+                "label",
+                "assignee",
+                "label_or_assignee"
+              ],
+              "default": "label"
+            },
+            "label": {
+              "type": "string",
+              "default": "agent:runner"
+            },
+            "assignee_is_bot_ok": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "filters": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "additionalProperties": false,
+          "properties": {
+            "team_key": {
+              "type": "string",
+              "default": ""
+            },
+            "project_name": {
+              "type": "string",
+              "default": ""
+            },
+            "include_labels": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "exclude_labels": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "min_priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4
+            },
+            "max_priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4
+            }
+          }
+        },
+        "polling": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "additionalProperties": false,
+          "properties": {
+            "interval_seconds": {
+              "type": "integer",
+              "minimum": 15,
+              "maximum": 3600,
+              "default": 90
+            },
+            "page_size": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 250,
+              "default": 50
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "properties": {
+              "primary": {
+                "const": "linear"
+              }
+            },
+            "required": [
+              "primary"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "required": [
+              "linear"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

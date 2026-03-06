@@ -1,0 +1,32 @@
+# Local secret files
+.env
+.env.*
+*.env
+*.env.*
+
+# Keep committed examples
+!.env.example
+!**/.env.example
+!**/*.env.example
+
+# Build artifacts
+target/
+node_modules/
+.next/
+dist/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (additional)
+secrets/
+
+# Temp
+*.tmp
+*.log

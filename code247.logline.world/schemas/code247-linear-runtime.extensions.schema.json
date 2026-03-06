@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logline.world/code247/schemas/code247-linear-runtime.extensions/1.0",
+  "title": "Code247 Linear Runtime Extensions",
+  "description": "Validation schema for Code247 runtime extension keys under x_*. This augments canonical workspace.manifest with OAuth, webhook, and automation runtime requirements for Linear.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "x_linear_oauth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor",
+        "authorize_url",
+        "token_url",
+        "client_id_env",
+        "client_secret_env",
+        "redirect_uri",
+        "scopes"
+      ],
+      "properties": {
+        "actor": {
+          "type": "string",
+          "enum": ["app"]
+        },
+        "authorize_url": {
+          "type": "string",
+          "format": "uri",
+          "default": "https://linear.app/oauth/authorize"
+        },
+        "token_url": {
+          "type": "string",
+          "format": "uri",
+          "default": "https://api.linear.app/oauth/token"
+        },
+        "client_id_env": {
+          "type": "string",
+          "minLength": 1,
+          "default": "LINEAR_CLIENT_ID"
+        },
+        "client_secret_env": {
+          "type": "string",
+          "minLength": 1,
+          "default": "LINEAR_CLIENT_SECRET"
+        },
+        "redirect_uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "scopes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "issues:create",
+              "comments:create",
+              "timeSchedule:write",
+              "admin"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "x_linear_webhook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "endpoint_path",
+        "signing_secret_env",
+        "signature_header",
+        "timestamp_field",
+        "max_skew_ms",
+        "delivery_header",
+        "ack_timeout_ms",
+        "resource_types"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "endpoint_path": {
+          "type": "string",
+          "pattern": "^/",
+          "default": "/webhooks/linear"
+        },
+        "signing_secret_env": {
+          "type": "string",
+          "minLength": 1,
+          "default": "LINEAR_WEBHOOK_SIGNING_SECRET"
+        },
+        "signature_header": {
+          "type": "string",
+          "const": "Linear-Signature"
+        },
+        "timestamp_field": {
+          "type": "string",
+          "const": "webhookTimestamp"
+        },
+        "max_skew_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000,
+          "default": 60000
+        },
+        "delivery_header": {
+          "type": "string",
+          "const": "Linear-Delivery"
+        },
+        "ack_timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000,
+          "default": 5000
+        },
+        "resource_types": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["Issue", "Comment", "Project", "Cycle"]
+          },
+          "uniqueItems": true,
+          "default": ["Issue", "Comment"]
+        },
+        "dedupe_ttl_hours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2160,
+          "default": 168
+        }
+      }
+    },
+    "x_linear_automation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "queue_label",
+        "locked_label",
+        "running_label",
+        "needs_human_label",
+        "validated_label",
+        "lock_ttl_minutes",
+        "start_comment_template",
+        "done_requires_evidence"
+      ],
+      "properties": {
+        "queue_label": {
+          "type": "string",
+          "minLength": 1,
+          "default": "code247:queue"
+        },
+        "locked_label": {
+          "type": "string",
+          "minLength": 1,
+          "default": "code247:locked"
+        },
+        "running_label": {
+          "type": "string",
+          "minLength": 1,
+          "default": "code247:running"
+        },
+        "needs_human_label": {
+          "type": "string",
+          "minLength": 1,
+          "default": "code247:needs-human"
+        },
+        "validated_label": {
+          "type": "string",
+          "minLength": 1,
+          "default": "code247:validated"
+        },
+        "lock_ttl_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440,
+          "default": 120
+        },
+        "start_comment_template": {
+          "type": "string",
+          "minLength": 1,
+          "default": "Code247 run started: run_id={{run_id}}"
+        },
+        "done_requires_evidence": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "properties": {
+              "primary": {
+                "const": "linear"
+              }
+            },
+            "required": ["primary"]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "x_linear_oauth",
+          "x_linear_webhook",
+          "x_linear_automation"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+name: Verify VVTV Minimums
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-minimums:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run project minimums script
+        run: ./scripts/verify-project-minimums.sh

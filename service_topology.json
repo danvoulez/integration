@@ -1,0 +1,164 @@
+{
+  "meta": {
+    "base_dir": "/Users/ubl-ops/Integration",
+    "doppler": {
+      "bin": "doppler",
+      "project": "logline-ecosystem",
+      "config": "dev"
+    },
+    "cloudflared": {
+      "tunnel": "vvz-core",
+      "credentials_file": "~/.cloudflared/975af37c-74a5-4995-992e-e9b0dba02322.json",
+      "origin_request": {
+        "no_tls_verify": true,
+        "connect_timeout": "10s",
+        "http_request_timeout": "120s"
+      },
+      "active_origin_request": {
+        "no_tls_verify": true,
+        "connect_timeout": "5s"
+      }
+    },
+    "paths": {
+      "ecosystem_config": "ecosystem.config.cjs",
+      "repo_cloudflared_config": "cloudflared-config.yml",
+      "active_cloudflared_config": "~/.cloudflared/config.yml"
+    }
+  },
+  "pm2_apps": [
+    {
+      "name": "ollama",
+      "mode": "direct",
+      "script": "/opt/homebrew/bin/ollama",
+      "args": "serve",
+      "interpreter": "none",
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "restart_delay": 3000,
+      "env": {
+        "OLLAMA_HOST": "0.0.0.0:11434",
+        "OLLAMA_ORIGINS": "*"
+      },
+      "health_check": "curl http://localhost:11434/api/tags"
+    },
+    {
+      "name": "llm-gateway",
+      "mode": "doppler",
+      "script": "/bin/bash",
+      "shell_args": "-lc",
+      "cwd": "llm-gateway.logline.world",
+      "command": "export LLM_API_KEY=\"${LLM_API_KEY:-${LLM_GATEWAY_API_KEY:-}}\" && cargo run --release --bin llm-gateway",
+      "interpreter": "none",
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "restart_delay": 5000,
+      "env": {
+        "RUST_LOG": "info"
+      },
+      "health_check": "curl http://localhost:7700/health",
+      "notes": [
+        "Modes: genius (premium), fast (cheap), code (local+fallback)"
+      ]
+    },
+    {
+      "name": "code247",
+      "mode": "doppler",
+      "script": "/bin/bash",
+      "shell_args": "-lc",
+      "cwd": "code247.logline.world",
+      "command": "export LLM_GATEWAY_API_KEY=\"${LLM_GATEWAY_API_KEY:-${LLM_API_KEY:-}}\" && cargo run --release --bin dual-agents-rust",
+      "interpreter": "none",
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "restart_delay": 5000,
+      "env": {
+        "RUST_LOG": "info",
+        "HEALTH_PORT": "4001"
+      },
+      "health_check": "curl http://localhost:4001/health"
+    },
+    {
+      "name": "edge-control",
+      "mode": "doppler",
+      "script": "/bin/bash",
+      "shell_args": "-lc",
+      "cwd": "edge-control.logline.world",
+      "command": "cargo run --release",
+      "interpreter": "none",
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "restart_delay": 5000,
+      "env": {
+        "RUST_LOG": "info",
+        "EDGE_CONTROL_PORT": "18080"
+      },
+      "health_check": "curl http://localhost:18080/health"
+    },
+    {
+      "name": "obs-api",
+      "mode": "doppler",
+      "script": "/bin/bash",
+      "shell_args": "-lc",
+      "cwd": "obs-api.logline.world",
+      "command": "npm run build && npm run start -- --port 3001",
+      "interpreter": "none",
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "restart_delay": 5000,
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "3001"
+      },
+      "health_check": "curl http://localhost:3001/api/health"
+    }
+  ],
+  "ingress": [
+    {
+      "comment": "LLM Gateway - handles all LLM API calls",
+      "hostname": "llm-gateway.logline.world",
+      "service": "http://127.0.0.1:7700"
+    },
+    {
+      "comment": "Code247 - autonomous coding agent",
+      "hostname": "code247.logline.world",
+      "service": "http://127.0.0.1:4001"
+    },
+    {
+      "comment": "Obs API - observability dashboard (Next.js)",
+      "hostname": "obs-api.logline.world",
+      "service": "http://127.0.0.1:3001"
+    },
+    {
+      "comment": "Optional alias for operator UX",
+      "hostname": "obs.logline.world",
+      "service": "http://127.0.0.1:3001"
+    },
+    {
+      "comment": "Edge Control - orchestration + webhook surface",
+      "hostname": "edge-control.logline.world",
+      "service": "http://127.0.0.1:18080"
+    },
+    {
+      "comment": "Existing services",
+      "hostname": "agent256.ubl.agency",
+      "service": "http://127.0.0.1:4256"
+    },
+    {
+      "hostname": "agent256.voulezvous.tv",
+      "service": "http://127.0.0.1:4256"
+    },
+    {
+      "hostname": "core.voulezvous.tv",
+      "service": "http://127.0.0.1:8787"
+    },
+    {
+      "comment": "Fallback - must be last",
+      "service": "http_status:404"
+    }
+  ]
+}

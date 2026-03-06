@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code247.dev/schemas/project-manifest/1.0/linear-task-source",
+  "title": "Code247 Linear Task Source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "endpoint",
+    "auth",
+    "claim"
+  ],
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "minLength": 1,
+      "default": "https://api.linear.app/graphql",
+      "description": "Linear GraphQL endpoint."
+    },
+    "auth": {
+      "$ref": "#/$defs/linear_auth"
+    },
+    "claim": {
+      "$ref": "#/$defs/linear_claim"
+    },
+    "filters": {
+      "$ref": "#/$defs/linear_filters"
+    },
+    "polling": {
+      "$ref": "#/$defs/linear_polling"
+    }
+  },
+  "$defs": {
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "linear_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token_env"
+      ],
+      "properties": {
+        "token_env": {
+          "type": "string",
+          "minLength": 1,
+          "default": "LINEAR_API_KEY",
+          "description": "Environment variable containing the Linear API key."
+        }
+      }
+    },
+    "linear_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "label",
+            "assignee",
+            "label_or_assignee"
+          ],
+          "default": "label",
+          "description": "How Code247 determines an issue is claimable."
+        },
+        "label": {
+          "type": "string",
+          "default": "agent:code247",
+          "description": "Label required when strategy uses labels."
+        },
+        "assignee_is_bot_ok": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, issues assigned to the bot are claimable."
+        }
+      }
+    },
+    "linear_filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "team_key": {
+          "type": "string",
+          "default": ""
+        },
+        "project_name": {
+          "type": "string",
+          "default": ""
+        },
+        "include_labels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "exclude_labels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "max_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "min_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        }
+      },
+      "default": {}
+    },
+    "linear_polling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interval_seconds": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 3600,
+          "default": 90
+        },
+        "page_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250,
+          "default": 50
+        }
+      },
+      "default": {}
+    }
+  }
+}

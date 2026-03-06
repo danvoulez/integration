@@ -1,0 +1,50 @@
+name: Manifest Validation
+
+on:
+  pull_request:
+    paths:
+      - ".code247/workspace.manifest.json"
+      - "schemas/**"
+      - "src/manifest_validation_rs.rs"
+      - "src/bin/validate_manifest.rs"
+      - ".github/workflows/manifest-validation.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".code247/workspace.manifest.json"
+      - "schemas/**"
+      - "src/manifest_validation_rs.rs"
+      - "src/bin/validate_manifest.rs"
+      - ".github/workflows/manifest-validation.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Validate schema JSON syntax
+        run: jq empty schemas/*.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate manifest (strict)
+        env:
+          CODE247_REPO_ROOT: .
+          CODE247_MANIFEST_PATH: .code247/workspace.manifest.json
+          CODE247_MANIFEST_SCHEMA_PATH: schemas/workspace.manifest.strict.schema.json
+          CODE247_MANIFEST_REQUIRED: "true"
+        run: cargo run --quiet --bin validate_manifest
+
+      - name: Validate Linear runtime extensions
+        env:
+          CODE247_REPO_ROOT: .
+          CODE247_MANIFEST_PATH: .code247/workspace.manifest.json
+          CODE247_MANIFEST_SCHEMA_PATH: schemas/code247-linear-runtime.extensions.schema.json
+          CODE247_MANIFEST_REQUIRED: "true"
+        run: cargo run --quiet --bin validate_manifest

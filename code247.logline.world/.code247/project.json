@@ -1,0 +1,101 @@
+{
+  "schema_version": "1.0",
+  "project": {
+    "name": "Code247",
+    "id": "code247",
+    "default_branch": "main"
+  },
+  "constitution": {
+    "canon_docs": [
+      "README.md",
+      "CODE247 × VVTV — Integration Contract v1.md"
+    ],
+    "adrs": [],
+    "invariants": [
+      "Consumo-de-Projetos.md"
+    ],
+    "roadmap": [
+      "Consumo-de-Projetos.md"
+    ],
+    "runbooks": [
+      "systemd/dual-agents.service"
+    ]
+  },
+  "contracts": {
+    "schemas_paths": [
+      "schemas"
+    ],
+    "openapi_paths": [],
+    "events_registry": ""
+  },
+  "policy_config": {
+    "config_paths": [],
+    "validation_command": "cargo test"
+  },
+  "gates": {
+    "gate0": {
+      "commands": [
+        "cargo test",
+        "cargo check"
+      ]
+    },
+    "per_area": {
+      "contracts": [
+        "cargo test"
+      ],
+      "config": [
+        "cargo test"
+      ],
+      "tests": [
+        "cargo test"
+      ],
+      "types": [
+        "cargo check"
+      ],
+      "security": []
+    }
+  },
+  "task_sources": {
+    "primary": "linear",
+    "project_key": "CODE247",
+    "ready_states": [
+      "Ready"
+    ],
+    "done_states": [
+      "Done"
+    ],
+    "blocked_states": [
+      "Blocked"
+    ],
+    "linear": {
+      "endpoint": "https://api.linear.app/graphql",
+      "auth": {
+        "token_env": "LINEAR_API_KEY"
+      },
+      "claim": {
+        "strategy": "label",
+        "label": "agent:code247",
+        "assignee_is_bot_ok": true
+      },
+      "filters": {
+        "team_key": "",
+        "project_name": "",
+        "include_labels": [],
+        "exclude_labels": [],
+        "max_priority": 4,
+        "min_priority": 0
+      },
+      "polling": {
+        "interval_seconds": 90,
+        "page_size": 50
+      }
+    }
+  },
+  "execution": {
+    "work_branch_prefix": "code247/",
+    "max_files_changed": 40,
+    "max_diff_lines": 1200,
+    "require_how_to_test": true,
+    "require_acceptance": true
+  }
+}

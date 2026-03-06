@@ -1,0 +1,81 @@
+name: Supply Chain Guardrails
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "package.json"
+      - "package-lock.json"
+      - "pnpm-lock.yaml"
+      - "yarn.lock"
+      - "auth/**"
+      - "**/auth/**"
+      - "billing/**"
+      - "**/billing/**"
+      - "permissions/**"
+      - "**/permissions/**"
+      - "migrations/**"
+      - "**/migrations/**"
+      - "infra/**"
+      - "**/infra/**"
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed files
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+
+          mapfile -t changed_files < <(git diff --name-only "$base_sha" "$head_sha")
+          printf '%s\n' "${changed_files[@]}"
+
+          risky=false
+          for file in "${changed_files[@]}"; do
+            normalized="$(echo "$file" | tr '[:upper:]' '[:lower:]')"
+            if [[ "$normalized" == .github/workflows/* ||
+                  "$normalized" == "cargo.toml" ||
+                  "$normalized" == "cargo.lock" ||
+                  "$normalized" == "package.json" ||
+                  "$normalized" == "package-lock.json" ||
+                  "$normalized" == "pnpm-lock.yaml" ||
+                  "$normalized" == "yarn.lock" ||
+                  "$normalized" == auth/* || "$normalized" == */auth/* ||
+                  "$normalized" == billing/* || "$normalized" == */billing/* ||
+                  "$normalized" == permissions/* || "$normalized" == */permissions/* ||
+                  "$normalized" == migrations/* || "$normalized" == */migrations/* ||
+                  "$normalized" == infra/* || "$normalized" == */infra/* ]]; then
+              risky=true
+              break
+            fi
+          done
+
+          echo "risky=$risky" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce review label for risky changes
+        if: steps.classify.outputs.risky == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          labels="$(jq -r '.pull_request.labels[].name // empty' "$GITHUB_EVENT_PATH" | tr '[:upper:]' '[:lower:]')"
+          if echo "$labels" | grep -Eq '(^|[[:space:]])(supply-chain-reviewed|security-review)([[:space:]]|$)'; then
+            echo "Guardrail label presente; prosseguindo."
+            exit 0
+          fi
+
+          echo "Mudança sensível detectada (.github/workflows, deps ou paths críticos)."
+          echo "Adicione um label de revisão: supply-chain-reviewed ou security-review."
+          exit 1

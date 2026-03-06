@@ -1,0 +1,288 @@
+{
+  "version": "policy-set.v1.1",
+  "description": "Deterministic transistor policy for intention drafting, PR risk, and fuel diff routing.",
+  "defaults": {
+    "mode": "NO_HUMAN_MIDDLE",
+    "fail_closed": true,
+    "allowed_decisions": ["YES", "NO", "CLOUD"]
+  },
+  "global_rules": [
+    {
+      "id": "GLOBAL-001",
+      "name": "block_secrets_or_pii",
+      "when": {
+        "reason_codes_any": ["secrets_suspected", "pii_suspected"]
+      },
+      "decision": "NO",
+      "priority": 100
+    },
+    {
+      "id": "GLOBAL-002",
+      "name": "escalate_sensitive_domains",
+      "when": {
+        "reason_codes_any": [
+          "touches_auth",
+          "touches_billing",
+          "touches_permissions",
+          "touches_migrations",
+          "touches_infra",
+          "touches_workflows",
+          "high_privilege_action"
+        ]
+      },
+      "decision": "CLOUD",
+      "priority": 95
+    }
+  ],
+  "domains": {
+    "intention_drafting": {
+      "required_input_fields": ["signal", "confidence"],
+      "thresholds": {
+        "yes_confidence_min": 0.85,
+        "cloud_confidence_min": 0.7,
+        "max_questions": 3
+      },
+      "rules": [
+        {
+          "id": "ID-001",
+          "name": "missing_required_fields",
+          "when": {
+            "missing_any_fields": ["signal", "confidence"]
+          },
+          "decision": "NO",
+          "priority": 100
+        },
+        {
+          "id": "ID-010",
+          "name": "ambiguous_or_insufficient_context",
+          "when": {
+            "reason_codes_any": ["ambiguous_request", "insufficient_context"]
+          },
+          "decision": "CLOUD",
+          "priority": 80,
+          "actions": [
+            {
+              "type": "ASK_CLARIFICATION_QUESTIONS",
+              "max_questions": 3
+            }
+          ]
+        },
+        {
+          "id": "ID-020",
+          "name": "explicit_escalate",
+          "when": {
+            "signal_eq": "ESCALATE",
+            "confidence_gte": 0.7
+          },
+          "decision": "CLOUD",
+          "priority": 70
+        },
+        {
+          "id": "ID-030",
+          "name": "draft_ready_for_confirmation",
+          "when": {
+            "signal_eq": "ALLOW",
+            "confidence_gte": 0.85
+          },
+          "decision": "YES",
+          "priority": 60,
+          "actions": [
+            {
+              "type": "REQUIRE_HUMAN_CONFIRMATION",
+              "checkpoint": "YES_HUMAN_1"
+            }
+          ]
+        },
+        {
+          "id": "ID-099",
+          "name": "default_safe",
+          "when": {},
+          "decision": "NO",
+          "priority": 1
+        }
+      ]
+    },
+    "pr_risk": {
+      "required_input_fields": ["signal", "confidence", "pr_id"],
+      "thresholds": {
+        "auto_merge_confidence_min": 0.9,
+        "deny_confidence_min": 0.8
+      },
+      "rules": [
+        {
+          "id": "PR-001",
+          "name": "missing_required_fields",
+          "when": {
+            "missing_any_fields": ["signal", "confidence", "pr_id"]
+          },
+          "decision": "NO",
+          "priority": 100
+        },
+        {
+          "id": "PR-010",
+          "name": "large_or_wide_change",
+          "when": {
+            "reason_codes_any": ["diff_large", "files_many", "blast_radius_high", "refactor_wide"]
+          },
+          "decision": "CLOUD",
+          "priority": 80
+        },
+        {
+          "id": "PR-011",
+          "name": "tests_missing",
+          "when": {
+            "reason_codes_any": ["tests_missing"],
+            "reason_codes_none": ["changes_only_docs"]
+          },
+          "decision": "NO",
+          "priority": 75
+        },
+        {
+          "id": "PR-020",
+          "name": "confident_deny",
+          "when": {
+            "signal_eq": "DENY",
+            "confidence_gte": 0.8
+          },
+          "decision": "NO",
+          "priority": 65
+        },
+        {
+          "id": "PR-021",
+          "name": "auto_merge_docs_or_tests",
+          "when": {
+            "confidence_gte": 0.8,
+            "reason_codes_any": ["changes_only_docs", "changes_only_tests"],
+            "reason_codes_none": [
+              "touches_auth",
+              "touches_billing",
+              "touches_permissions",
+              "touches_migrations",
+              "touches_infra",
+              "touches_workflows"
+            ]
+          },
+          "decision": "YES",
+          "priority": 60,
+          "actions": [
+            {
+              "type": "MARK_AUTO_MERGE_CANDIDATE",
+              "requires_ci_pass": true
+            }
+          ]
+        },
+        {
+          "id": "PR-022",
+          "name": "auto_merge_light",
+          "when": {
+            "signal_eq": "ALLOW",
+            "confidence_gte": 0.9,
+            "reason_codes_any": ["blast_radius_low"],
+            "reason_codes_none": [
+              "unknown_impact",
+              "tests_missing",
+              "touches_auth",
+              "touches_billing",
+              "touches_permissions",
+              "touches_migrations",
+              "touches_infra",
+              "touches_workflows"
+            ]
+          },
+          "decision": "YES",
+          "priority": 55,
+          "actions": [
+            {
+              "type": "MARK_AUTO_MERGE_CANDIDATE",
+              "requires_ci_pass": true
+            }
+          ]
+        },
+        {
+          "id": "PR-030",
+          "name": "explicit_escalate",
+          "when": {
+            "signal_eq": "ESCALATE"
+          },
+          "decision": "CLOUD",
+          "priority": 40
+        },
+        {
+          "id": "PR-099",
+          "name": "default_safe",
+          "when": {},
+          "decision": "NO",
+          "priority": 1
+        }
+      ]
+    },
+    "fuel_diff": {
+      "required_input_fields": ["signal", "confidence"],
+      "thresholds": {
+        "draft_confidence_min": 0.88,
+        "ignore_confidence_max": 0.65
+      },
+      "rules": [
+        {
+          "id": "FD-001",
+          "name": "missing_required_fields",
+          "when": {
+            "missing_any_fields": ["signal", "confidence"]
+          },
+          "decision": "NO",
+          "priority": 100
+        },
+        {
+          "id": "FD-010",
+          "name": "strong_ops_signal_creates_draft",
+          "when": {
+            "confidence_gte": 0.88,
+            "reason_codes_any": [
+              "error_spike",
+              "latency_spike",
+              "rate_limit_spike",
+              "provider_degraded",
+              "rollback_increase",
+              "cost_spike",
+              "new_cluster_emerging",
+              "policy_regression_suspected"
+            ]
+          },
+          "decision": "YES",
+          "priority": 70,
+          "actions": [
+            {
+              "type": "CREATE_DRAFT_INTENTION",
+              "requires_human_confirmation": true
+            }
+          ]
+        },
+        {
+          "id": "FD-020",
+          "name": "low_confidence_log_only",
+          "when": {
+            "confidence_lt": 0.65
+          },
+          "decision": "NO",
+          "priority": 50
+        },
+        {
+          "id": "FD-030",
+          "name": "explicit_escalate",
+          "when": {
+            "signal_eq": "ESCALATE"
+          },
+          "decision": "CLOUD",
+          "priority": 40
+        },
+        {
+          "id": "FD-099",
+          "name": "default_log_only",
+          "when": {},
+          "decision": "NO",
+          "priority": 1
+        }
+      ]
+    }
+  }
+}

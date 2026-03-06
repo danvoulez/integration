@@ -1,0 +1,532 @@
+openapi: 3.0.3
+info:
+  title: LLM Gateway API
+  version: 0.3.0
+  description: |
+    OpenAI-compatible gateway with local and premium model routing.
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: health
+      tags: [System]
+      responses:
+        '200':
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /healthz:
+    get:
+      summary: Health check alias
+      operationId: healthz
+      tags: [System]
+      responses:
+        '200':
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /v1/models:
+    get:
+      summary: List available models
+      operationId: listModels
+      tags: [Models]
+      responses:
+        '200':
+          description: Model list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsResponse'
+
+  /v1/llm/matrix:
+    get:
+      summary: Get model capability matrix
+      operationId: modelMatrix
+      tags: [Models]
+      responses:
+        '200':
+          description: Matrix response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatrixResponse'
+
+  /v1/modes:
+    get:
+      summary: Mode contract
+      operationId: modeContract
+      tags: [System]
+      responses:
+        '200':
+          description: Canonical mode contract and legacy aliases
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModeContractResponse'
+
+  /v1/contracts/code247:
+    get:
+      summary: Gateway to Code247 formal contract
+      operationId: code247Contract
+      tags: [System]
+      responses:
+        '200':
+          description: Contract payload with CI target and fallback behavior fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Code247ContractResponse'
+
+  /v1/metrics/summary:
+    get:
+      summary: Metrics summary (JSON)
+      operationId: metricsSummary
+      tags: [System]
+      responses:
+        '200':
+          description: Aggregated metrics snapshot for dashboards/obs-api
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSummaryResponse'
+
+  /v1/admin/fuel/reconcile/cloud:
+    post:
+      summary: Reconcile settled cloud cost (OpenAI/Anthropic) for a window
+      operationId: fuelReconcileCloud
+      tags: [Fuel]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloudReconcileRequest'
+      responses:
+        '200':
+          description: Settlement reconciliation payload
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Upstream/provider/supabase failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/release/manifest:
+    post:
+      summary: Publish manifest.intentions.json for release sync
+      operationId: publishReleaseManifest
+      tags: [System]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseManifestRequest'
+      responses:
+        '200':
+          description: Manifest publication payload
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Manifest write failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/chat/completions:
+    post:
+      summary: Create chat completion
+      operationId: chatCompletions
+      tags: [Chat]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Completion response (JSON or SSE stream)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1730000000,"model":"qwen2.5-coder:7b","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
+
+                data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1730000000,"model":"qwen2.5-coder:7b","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+                data: [DONE]
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Upstream/routing/provider error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+
+  schemas:
+    GatewayMode:
+      type: string
+      enum: [genius, fast, code]
+
+    HealthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        service:
+          type: string
+        version:
+          type: string
+        default_mode:
+          $ref: '#/components/schemas/GatewayMode'
+        premium:
+          type: object
+          properties:
+            openai_enabled:
+              type: boolean
+            anthropic_enabled:
+              type: boolean
+            gemini_enabled:
+              type: boolean
+          required: [openai_enabled, anthropic_enabled, gemini_enabled]
+      required: [ok, service, version, default_mode, premium]
+
+    ChatRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          description: Model hint (provider/model alias)
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        temperature:
+          type: number
+          format: float
+        max_tokens:
+          type: integer
+          minimum: 1
+        stream:
+          type: boolean
+          default: false
+          description: |
+            If true, returns text/event-stream (SSE) in OpenAI chunk format.
+        mode:
+          allOf:
+            - $ref: '#/components/schemas/GatewayMode'
+          description: "Canonical modes: genius, fast, code. Legacy aliases premium/local/auto are accepted and normalized server-side."
+        task_hint:
+          type: string
+      required: [messages]
+
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+      required: [role, content]
+
+    ChatResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+          description: Correlation ID propagated across the ecosystem.
+        output_schema:
+          type: string
+          const: https://logline.world/schemas/llm-gateway.chat-response.v1.schema.json
+        id:
+          type: string
+        object:
+          type: string
+          example: chat.completion
+        created:
+          type: integer
+          format: int64
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Choice'
+        usage:
+          $ref: '#/components/schemas/Usage'
+        _lab:
+          $ref: '#/components/schemas/LabMeta'
+      required: [request_id, output_schema, id, object, created, model, choices, usage, _lab]
+
+    Choice:
+      type: object
+      properties:
+        index:
+          type: integer
+        message:
+          $ref: '#/components/schemas/ChatMessage'
+        finish_reason:
+          type: string
+      required: [index, message, finish_reason]
+
+    Usage:
+      type: object
+      properties:
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+      required: [prompt_tokens, completion_tokens, total_tokens]
+
+    LabMeta:
+      type: object
+      properties:
+        route:
+          type: string
+        upstream_url:
+          type: string
+        model_used:
+          type: string
+        mode_used:
+          $ref: '#/components/schemas/GatewayMode'
+        task_class:
+          type: string
+          enum: [background_classification, coding, planning, critical, general]
+        decision_path:
+          type: array
+          items:
+            type: string
+        cost_tier:
+          type: string
+          enum: [zero, high]
+      required: [route, upstream_url, model_used, mode_used, task_class, decision_path, cost_tier]
+
+    ModelsResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelInfo'
+      required: [object, data]
+
+    ModelInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: model
+        created:
+          type: integer
+          format: int64
+        owned_by:
+          type: string
+      required: [id, object, created, owned_by]
+
+    MatrixResponse:
+      type: object
+      properties:
+        updated_at:
+          type: string
+          format: date-time
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelProfile'
+      required: [updated_at, models]
+
+    ModelProfile:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        tier:
+          type: string
+          enum: [local, premium]
+        cost:
+          type: integer
+          minimum: 1
+          maximum: 5
+        genius:
+          type: integer
+          minimum: 1
+          maximum: 5
+        code:
+          type: integer
+          minimum: 1
+          maximum: 5
+        speed:
+          type: integer
+          minimum: 1
+          maximum: 5
+        tags:
+          type: array
+          items:
+            type: string
+      required: [provider, model, tier, cost, genius, code, speed, tags]
+
+    ModeContractResponse:
+      type: object
+      properties:
+        contract_version:
+          type: string
+        default_mode:
+          $ref: '#/components/schemas/GatewayMode'
+        canonical_modes:
+          type: array
+          items:
+            $ref: '#/components/schemas/GatewayMode'
+        legacy_aliases:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/GatewayMode'
+        notes:
+          type: array
+          items:
+            type: string
+      required: [contract_version, default_mode, canonical_modes, legacy_aliases]
+
+    Code247ContractResponse:
+      type: object
+      additionalProperties: true
+
+    CloudReconcileRequest:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        dry_run:
+          type: boolean
+          default: false
+        max_events:
+          type: integer
+          minimum: 1
+          maximum: 5000
+
+    ReleaseManifestRequest:
+      type: object
+      properties:
+        release_version:
+          type: string
+        notes:
+          type: array
+          items:
+            type: string
+
+    MetricsSummaryResponse:
+      type: object
+      additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+        output_schema:
+          type: string
+          const: https://logline.world/schemas/error-envelope.v1.schema.json
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required: [request_id, output_schema, error]
+
+    ErrorDetail:
+      type: object
+      properties:
+        message:
+          type: string
+        type:
+          type: string
+          enum:
+            - invalid_request_error
+            - routing_error
+            - provider_auth_error
+            - upstream_error
+            - parse_error
+        code:
+          type: string
+      required: [message, type, code]

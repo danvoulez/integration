@@ -1,0 +1,147 @@
+{
+  "project": "Code247 x Linear Integration",
+  "version": "1.0",
+  "default_labels": ["code247", "linear", "integration"],
+  "tasks": [
+    {
+      "key": "L247-001",
+      "title": "OAuth start endpoint with actor=app",
+      "priority": 2,
+      "estimate": 3,
+      "labels": ["auth", "oauth"],
+      "description": "Implement /oauth/start with state nonce, configured scopes, redirect URI, and actor=app.",
+      "acceptance": [
+        "Authorization URL contains actor=app",
+        "State nonce is generated and stored",
+        "Scopes are least-privilege configurable"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "L247-002",
+      "title": "OAuth callback and token storage",
+      "priority": 1,
+      "estimate": 5,
+      "labels": ["auth", "oauth"],
+      "description": "Implement /oauth/callback exchanging code for access+refresh tokens and persisting securely.",
+      "acceptance": [
+        "Code exchange succeeds against Linear token endpoint",
+        "Access and refresh tokens are persisted atomically",
+        "Failure path does not leak secret values"
+      ],
+      "depends_on": ["L247-001"]
+    },
+    {
+      "key": "L247-003",
+      "title": "Refresh token worker",
+      "priority": 1,
+      "estimate": 3,
+      "labels": ["auth", "runtime"],
+      "description": "Add proactive refresh worker using refresh_token grant before expiry.",
+      "acceptance": [
+        "Token refresh runs before expiry",
+        "New token pair replaces prior pair safely",
+        "Refresh failures are observable via metrics/logs"
+      ],
+      "depends_on": ["L247-002"]
+    },
+    {
+      "key": "L247-005",
+      "title": "Webhook signature validation",
+      "priority": 1,
+      "estimate": 5,
+      "labels": ["webhook", "security"],
+      "description": "Implement Linear-Signature HMAC validation over raw body with constant-time compare.",
+      "acceptance": [
+        "Valid signed payload accepted",
+        "Tampered payload rejected",
+        "No secret values logged"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "L247-006",
+      "title": "Webhook replay-window guard",
+      "priority": 1,
+      "estimate": 2,
+      "labels": ["webhook", "security"],
+      "description": "Enforce webhookTimestamp skew window and reject stale payloads.",
+      "acceptance": [
+        "Payload beyond max skew rejected",
+        "Clock skew threshold configurable",
+        "Rejected count exposed in metrics"
+      ],
+      "depends_on": ["L247-005"]
+    },
+    {
+      "key": "L247-007",
+      "title": "Delivery idempotency store",
+      "priority": 1,
+      "estimate": 3,
+      "labels": ["webhook", "idempotency"],
+      "description": "Persist Linear-Delivery UUID and dedupe repeated events.",
+      "acceptance": [
+        "First delivery processes",
+        "Duplicate delivery is no-op",
+        "Idempotency records have retention policy"
+      ],
+      "depends_on": ["L247-005"]
+    },
+    {
+      "key": "L247-009",
+      "title": "Issue claim and lock protocol",
+      "priority": 1,
+      "estimate": 5,
+      "labels": ["runtime", "state"],
+      "description": "Implement lock label/comment and issue->run mapping to prevent double execution.",
+      "acceptance": [
+        "Issue lock is atomic",
+        "Concurrent claims resolve to single run",
+        "Start comment includes run_id"
+      ],
+      "depends_on": ["L247-007"]
+    },
+    {
+      "key": "L247-013",
+      "title": "Evidence comment writer",
+      "priority": 2,
+      "estimate": 3,
+      "labels": ["audit", "comments"],
+      "description": "Publish standardized evidence comment with plan, PR, gates, and how_to_test.",
+      "acceptance": [
+        "Comment template is deterministic",
+        "PR and gate links are included",
+        "Missing evidence blocks done transition"
+      ],
+      "depends_on": ["L247-009"]
+    },
+    {
+      "key": "L247-014",
+      "title": "Done transition gate",
+      "priority": 1,
+      "estimate": 3,
+      "labels": ["policy", "workflow"],
+      "description": "Enforce CI/post-merge evidence before moving issue to Done in Linear.",
+      "acceptance": [
+        "Done transition denied when evidence is missing",
+        "Done transition succeeds when all required checks pass",
+        "Decision logged with run_id"
+      ],
+      "depends_on": ["L247-013"]
+    },
+    {
+      "key": "L247-017",
+      "title": "DLQ and replay",
+      "priority": 2,
+      "estimate": 5,
+      "labels": ["reliability", "operations"],
+      "description": "Add dead-letter queue for failed webhook jobs and replay command.",
+      "acceptance": [
+        "Non-recoverable failures are routed to DLQ",
+        "Replay command requeues with audit log",
+        "No duplicate side-effects after replay"
+      ],
+      "depends_on": ["L247-008", "L247-009"]
+    }
+  ]
+}

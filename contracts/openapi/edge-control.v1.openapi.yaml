@@ -1,0 +1,546 @@
+openapi: 3.0.3
+info:
+  title: logline.world edge-control API
+  version: "1.0.0"
+  description: |
+    Control-plane API for intention drafting, PR risk opinion and fuel diff routing.
+servers:
+  - url: https://edge-control.logline.world
+  - url: http://localhost:8080
+tags:
+  - name: Health
+  - name: Intention
+  - name: PR
+  - name: Fuel
+  - name: Orchestration
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [request_id, output_schema, status]
+                properties:
+                  request_id:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                  output_schema:
+                    type: string
+                    const: https://logline.world/schemas/response-envelope.v1.schema.json
+                  status:
+                    type: string
+                    enum: [ok]
+
+  /v1/intention/draft:
+    post:
+      tags: [Intention]
+      summary: Generate DraftIntention from free text
+      security:
+        - SupabaseJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntentionDraftRequestV1"
+      responses:
+        "200":
+          description: Draft generated
+          headers:
+            x-gate-decision:
+              description: Deterministic gate decision (`YES|NO|HUMAN|CLOUD`).
+              schema:
+                type: string
+            x-gate-policy:
+              description: Policy id/version used to evaluate the decision.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/draft-intention.v1.schema.json"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseV1"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseV1"
+
+  /v1/pr/risk:
+    post:
+      tags: [PR]
+      summary: Produce OpinionSignal for PR risk
+      security:
+        - SupabaseJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrRiskRequestV1"
+      responses:
+        "200":
+          description: Opinion generated
+          headers:
+            x-gate-decision:
+              description: Deterministic gate decision (`YES|NO|HUMAN|CLOUD`).
+              schema:
+                type: string
+            x-gate-policy:
+              description: Policy id/version used to evaluate the decision.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/opinion-signal.v1.schema.json"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseV1"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseV1"
+
+  /v1/fuel/diff/route:
+    post:
+      tags: [Fuel]
+      summary: Produce OpinionSignal from deterministic fuel diff pack
+      security:
+        - SupabaseJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelDiffRouteRequestV1"
+      responses:
+        "200":
+          description: Opinion generated
+          headers:
+            x-gate-decision:
+              description: Deterministic gate decision (`YES|NO|HUMAN|CLOUD`).
+              schema:
+                type: string
+            x-gate-policy:
+              description: Policy id/version used to evaluate the decision.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "../schemas/opinion-signal.v1.schema.json"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseV1"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponseV1"
+
+  /v1/orchestrate/intention-confirmed:
+    post:
+      tags: [Orchestration]
+      summary: Checkpoint YES/HUMAN #1 and dispatch intention to Code247/Linear
+      security:
+        - SupabaseJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrchestrateIntentionRequestV1"
+      responses:
+        "200":
+          description: Intention accepted and dispatched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrchestrateResponseV1"
+
+  /v1/orchestrate/github-event:
+    post:
+      tags: [Orchestration]
+      summary: Sync GitHub lifecycle events back to Linear through Code247
+      security:
+        - SupabaseJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrchestrateGitHubEventRequestV1"
+      responses:
+        "200":
+          description: Event synchronized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrchestrateResponseV1"
+
+  /v1/orchestrate/rollback:
+    post:
+      tags: [Orchestration]
+      summary: Checkpoint YES/HUMAN #2 and sync rollback outcome
+      security:
+        - SupabaseJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrchestrateRollbackRequestV1"
+      responses:
+        "200":
+          description: Rollback synchronized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrchestrateResponseV1"
+
+components:
+  securitySchemes:
+    SupabaseJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponseV1:
+      type: object
+      additionalProperties: false
+      required: [request_id, output_schema, error]
+      properties:
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        output_schema:
+          type: string
+          const: https://logline.world/schemas/error-envelope.v1.schema.json
+        error:
+          type: object
+          additionalProperties: false
+          required: [type, code, message]
+          properties:
+            type:
+              type: string
+              minLength: 1
+              maxLength: 64
+            code:
+              type: string
+              minLength: 1
+              maxLength: 64
+            message:
+              type: string
+              minLength: 1
+              maxLength: 2000
+        trace_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+
+    IntentionDraftRequestV1:
+      type: object
+      additionalProperties: false
+      required: [version, intent_text, context]
+      properties:
+        version:
+          type: string
+          enum: ["intention.draft.request.v1"]
+        intent_text:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        context:
+          type: object
+          additionalProperties: false
+          required: [repo]
+          properties:
+            repo:
+              type: string
+              minLength: 1
+              maxLength: 200
+            default_branch:
+              type: string
+              maxLength: 80
+            source:
+              type: object
+              additionalProperties: false
+              properties:
+                kind:
+                  type: string
+                  enum: [ui, linear, api, fuel_diff]
+                ref:
+                  type: string
+                  maxLength: 256
+            constraints_hint:
+              type: object
+              additionalProperties: false
+              properties:
+                risk_tier:
+                  type: string
+                  enum: [LOW, MED, HIGH]
+                max_files_changed:
+                  type: integer
+                  minimum: 1
+                  maximum: 200
+                max_diff_lines:
+                  type: integer
+                  minimum: 1
+                  maximum: 20000
+
+    PrRiskRequestV1:
+      type: object
+      additionalProperties: false
+      required: [version, pr_id, repo, base_branch, head_branch, diff_stats, touched_paths]
+      properties:
+        version:
+          type: string
+          enum: ["pr.risk.request.v1"]
+        pr_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        repo:
+          type: string
+          minLength: 1
+          maxLength: 200
+        base_branch:
+          type: string
+          minLength: 1
+          maxLength: 80
+        head_branch:
+          type: string
+          minLength: 1
+          maxLength: 120
+        diff_stats:
+          type: object
+          additionalProperties: false
+          required: [files_changed, lines_added, lines_deleted]
+          properties:
+            files_changed:
+              type: integer
+              minimum: 0
+              maximum: 10000
+            lines_added:
+              type: integer
+              minimum: 0
+              maximum: 1000000
+            lines_deleted:
+              type: integer
+              minimum: 0
+              maximum: 1000000
+        touched_paths:
+          type: array
+          maxItems: 2000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 512
+
+    FuelDiffRouteRequestV1:
+      type: object
+      additionalProperties: false
+      required: [version, from_snapshot_id, to_snapshot_id, drift_score, metric_deltas, flags, evidence_refs]
+      properties:
+        version:
+          type: string
+          enum: ["fuel.diff.route.request.v1"]
+        from_snapshot_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        to_snapshot_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        drift_score:
+          type: number
+          minimum: 0
+          maximum: 2
+        metric_deltas:
+          type: object
+        flags:
+          type: array
+          maxItems: 24
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        evidence_refs:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+
+    HumanCheckpointV1:
+      type: object
+      additionalProperties: false
+      required: [checkpoint, confirmed_by]
+      properties:
+        checkpoint:
+          type: string
+          enum: [YES_HUMAN_1, YES_HUMAN_2]
+        confirmed_by:
+          type: string
+          minLength: 1
+          maxLength: 200
+        confirmed_at:
+          type: string
+          format: date-time
+
+    OrchestrateIntentionRequestV1:
+      type: object
+      additionalProperties: false
+      required:
+        [workspace, project, intention_id, title, description, checkpoint]
+      properties:
+        workspace:
+          type: string
+          minLength: 1
+          maxLength: 120
+        project:
+          type: string
+          minLength: 1
+          maxLength: 120
+        intention_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        description:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        priority:
+          type: string
+          enum: [critical, high, medium, low]
+        revision:
+          type: string
+          maxLength: 200
+        ci_target:
+          type: string
+          maxLength: 200
+        checkpoint:
+          $ref: "#/components/schemas/HumanCheckpointV1"
+
+    OrchestrateGitHubEventRequestV1:
+      type: object
+      additionalProperties: false
+      required: [workspace, project, intention_id, event_type]
+      properties:
+        workspace:
+          type: string
+          minLength: 1
+          maxLength: 120
+        project:
+          type: string
+          minLength: 1
+          maxLength: 120
+        intention_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        event_type:
+          type: string
+          enum:
+            [pr.opened, checks.passed, pr.merged, deploy.completed, pr.changes_requested]
+        status:
+          type: string
+          enum: [success, failed]
+        summary:
+          type: string
+          maxLength: 2000
+        pr_url:
+          type: string
+          maxLength: 2000
+        ci_url:
+          type: string
+          maxLength: 2000
+        deploy_url:
+          type: string
+          maxLength: 2000
+
+    OrchestrateRollbackRequestV1:
+      type: object
+      additionalProperties: false
+      required: [workspace, project, intention_id, reason, strategy, checkpoint]
+      properties:
+        workspace:
+          type: string
+          minLength: 1
+          maxLength: 120
+        project:
+          type: string
+          minLength: 1
+          maxLength: 120
+        intention_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        strategy:
+          type: string
+          enum: [REVERT_PR, FEATURE_FLAG, CONFIG_TOGGLE, ROLLBACK_SCRIPT]
+        rollback_url:
+          type: string
+          maxLength: 2000
+        checkpoint:
+          $ref: "#/components/schemas/HumanCheckpointV1"
+
+    OrchestrateResponseV1:
+      type: object
+      additionalProperties: false
+      required: [request_id, output_schema, code247_request_id, status]
+      properties:
+        request_id:
+          type: string
+          maxLength: 128
+        output_schema:
+          type: string
+          const: https://logline.world/schemas/response-envelope.v1.schema.json
+        code247_request_id:
+          type: string
+          maxLength: 128
+        queue_id:
+          type: string
+          maxLength: 128
+        issue_id:
+          type: string
+          maxLength: 128
+        status:
+          type: string
+          maxLength: 64

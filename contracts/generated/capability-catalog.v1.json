@@ -1,0 +1,2217 @@
+{
+  "catalog_version": "logline.capability-catalog.v1",
+  "generated_at": "2026-03-06T11:00:20.422Z",
+  "generated_by": "scripts/generate-capability-catalog.mjs",
+  "summary": {
+    "total_capabilities": 127,
+    "cli_capabilities": 80,
+    "api_capabilities": 47,
+    "by_service": {
+      "code247": 10,
+      "edge-control": 7,
+      "inference-plane": 5,
+      "llm-gateway": 10,
+      "obs-api": 15,
+      "logic-cli": 80
+    }
+  },
+  "sources": {
+    "cli": {
+      "binary": "logline",
+      "catalog_version": "logline-cli.catalog.v1",
+      "command_entries": 100
+    },
+    "apis": [
+      {
+        "service_id": "obs-api",
+        "source_file": "obs-api.logline.world/openapi.yaml",
+        "title": "OBS API",
+        "version": "1.0.0",
+        "servers": [
+          "https://obs-api.logline.world",
+          "http://localhost:3001"
+        ],
+        "visibility": "public",
+        "endpoint_count": 15
+      },
+      {
+        "service_id": "code247",
+        "source_file": "code247.logline.world/openapi.yaml",
+        "title": "Code247 API",
+        "version": "1.0.0",
+        "servers": [
+          "https://code247.logline.world",
+          "http://localhost:4001"
+        ],
+        "visibility": "public",
+        "endpoint_count": 10
+      },
+      {
+        "service_id": "llm-gateway",
+        "source_file": "llm-gateway.logline.world/openapi.yaml",
+        "title": "LLM Gateway API",
+        "version": "0.3.0",
+        "servers": [
+          "http://localhost:3000"
+        ],
+        "visibility": "public",
+        "endpoint_count": 10
+      },
+      {
+        "service_id": "edge-control",
+        "source_file": "contracts/openapi/edge-control.v1.openapi.yaml",
+        "title": "logline.world edge-control API",
+        "version": "1.0.0",
+        "servers": [
+          "https://edge-control.logline.world",
+          "http://localhost:8080"
+        ],
+        "visibility": "public",
+        "endpoint_count": 7
+      },
+      {
+        "service_id": "inference-plane",
+        "source_file": "contracts/openapi/inference-plane.v1.openapi.yaml",
+        "title": "logline.world inference-plane API",
+        "version": "1.0.0",
+        "servers": [
+          "http://lab-512.local:9090",
+          "http://localhost:9090"
+        ],
+        "visibility": "internal",
+        "endpoint_count": 5
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "capability_id": "api.code247.get.health",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/health",
+      "summary": "Health check",
+      "tags": [
+        "System"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.get.intentions.workspace.project",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/intentions/{workspace}/{project}",
+      "summary": "Read latest linkage snapshot for workspace/project",
+      "tags": [
+        "Intentions"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.get.jobs",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/jobs",
+      "summary": "List recent jobs",
+      "tags": [
+        "Jobs"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.get.oauth.callback",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/oauth/callback",
+      "summary": "Linear OAuth callback",
+      "tags": [
+        "OAuth"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.get.oauth.start",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/oauth/start",
+      "summary": "Start Linear OAuth flow",
+      "tags": [
+        "OAuth"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.get.oauth.status",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/oauth/status",
+      "summary": "OAuth configuration/connection status",
+      "tags": [
+        "OAuth"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.post.intentions",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/intentions",
+      "summary": "Ingest intentions and sync to Linear",
+      "tags": [
+        "Intentions"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.post.intentions.sync",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/intentions/sync",
+      "summary": "Sync execution status/evidence back to Linear",
+      "tags": [
+        "Intentions"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.post.jobs",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/jobs",
+      "summary": "Create job",
+      "tags": [
+        "Jobs"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.code247.post.webhooks.linear",
+      "surface": "api",
+      "service_id": "code247",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/webhooks/linear",
+      "summary": "Receive Linear webhook deliveries",
+      "tags": [
+        "Linear"
+      ],
+      "source_file": "code247.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.edge-control.get.health",
+      "surface": "api",
+      "service_id": "edge-control",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/health",
+      "summary": "Health check",
+      "tags": [
+        "Health"
+      ],
+      "source_file": "contracts/openapi/edge-control.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.edge-control.post.v1.fuel.diff.route",
+      "surface": "api",
+      "service_id": "edge-control",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/fuel/diff/route",
+      "summary": "Produce OpinionSignal from deterministic fuel diff pack",
+      "tags": [
+        "Fuel"
+      ],
+      "source_file": "contracts/openapi/edge-control.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.edge-control.post.v1.intention.draft",
+      "surface": "api",
+      "service_id": "edge-control",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/intention/draft",
+      "summary": "Generate DraftIntention from free text",
+      "tags": [
+        "Intention"
+      ],
+      "source_file": "contracts/openapi/edge-control.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.edge-control.post.v1.orchestrate.github-event",
+      "surface": "api",
+      "service_id": "edge-control",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/orchestrate/github-event",
+      "summary": "Sync GitHub lifecycle events back to Linear through Code247",
+      "tags": [
+        "Orchestration"
+      ],
+      "source_file": "contracts/openapi/edge-control.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.edge-control.post.v1.orchestrate.intention-confirmed",
+      "surface": "api",
+      "service_id": "edge-control",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/orchestrate/intention-confirmed",
+      "summary": "Checkpoint YES/HUMAN #1 and dispatch intention to Code247/Linear",
+      "tags": [
+        "Orchestration"
+      ],
+      "source_file": "contracts/openapi/edge-control.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.edge-control.post.v1.orchestrate.rollback",
+      "surface": "api",
+      "service_id": "edge-control",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/orchestrate/rollback",
+      "summary": "Checkpoint YES/HUMAN #2 and sync rollback outcome",
+      "tags": [
+        "Orchestration"
+      ],
+      "source_file": "contracts/openapi/edge-control.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.edge-control.post.v1.pr.risk",
+      "surface": "api",
+      "service_id": "edge-control",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/pr/risk",
+      "summary": "Produce OpinionSignal for PR risk",
+      "tags": [
+        "PR"
+      ],
+      "source_file": "contracts/openapi/edge-control.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.inference-plane.get.health",
+      "surface": "api",
+      "service_id": "inference-plane",
+      "visibility": "internal",
+      "method": "GET",
+      "path": "/health",
+      "summary": "Health check",
+      "tags": [
+        "Health"
+      ],
+      "source_file": "contracts/openapi/inference-plane.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.inference-plane.post.v1.embed",
+      "surface": "api",
+      "service_id": "inference-plane",
+      "visibility": "internal",
+      "method": "POST",
+      "path": "/v1/embed",
+      "summary": "Generate embeddings for deterministic docs",
+      "tags": [
+        "Embeddings"
+      ],
+      "source_file": "contracts/openapi/inference-plane.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.inference-plane.post.v1.fuel.diff.route",
+      "surface": "api",
+      "service_id": "inference-plane",
+      "visibility": "internal",
+      "method": "POST",
+      "path": "/v1/fuel/diff/route",
+      "summary": "Emit opinion from fuel snapshot diff pack",
+      "tags": [
+        "Fuel"
+      ],
+      "source_file": "contracts/openapi/inference-plane.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.inference-plane.post.v1.intention.draft",
+      "surface": "api",
+      "service_id": "inference-plane",
+      "visibility": "internal",
+      "method": "POST",
+      "path": "/v1/intention/draft",
+      "summary": "Draft intention AST and rollback plan",
+      "tags": [
+        "Intention"
+      ],
+      "source_file": "contracts/openapi/inference-plane.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.inference-plane.post.v1.pr.risk",
+      "surface": "api",
+      "service_id": "inference-plane",
+      "visibility": "internal",
+      "method": "POST",
+      "path": "/v1/pr/risk",
+      "summary": "Emit PR risk opinion",
+      "tags": [
+        "PR"
+      ],
+      "source_file": "contracts/openapi/inference-plane.v1.openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.get.health",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/health",
+      "summary": "Health check",
+      "tags": [
+        "System"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.get.healthz",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/healthz",
+      "summary": "Health check alias",
+      "tags": [
+        "System"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.get.v1.contracts.code247",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/v1/contracts/code247",
+      "summary": "Gateway to Code247 formal contract",
+      "tags": [
+        "System"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.get.v1.llm.matrix",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/v1/llm/matrix",
+      "summary": "Get model capability matrix",
+      "tags": [
+        "Models"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.get.v1.metrics.summary",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/v1/metrics/summary",
+      "summary": "Metrics summary (JSON)",
+      "tags": [
+        "System"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.get.v1.models",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/v1/models",
+      "summary": "List available models",
+      "tags": [
+        "Models"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.get.v1.modes",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/v1/modes",
+      "summary": "Mode contract",
+      "tags": [
+        "System"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.post.v1.admin.fuel.reconcile.cloud",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/admin/fuel/reconcile/cloud",
+      "summary": "Reconcile settled cloud cost (OpenAI/Anthropic) for a window",
+      "tags": [
+        "Fuel"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.post.v1.admin.release.manifest",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/admin/release/manifest",
+      "summary": "Publish manifest.intentions.json for release sync",
+      "tags": [
+        "System"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.llm-gateway.post.v1.chat.completions",
+      "surface": "api",
+      "service_id": "llm-gateway",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "summary": "Create chat completion",
+      "tags": [
+        "Chat"
+      ],
+      "source_file": "llm-gateway.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.alerts.open",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/alerts/open",
+      "summary": "List open alerts",
+      "tags": [
+        "Alerts"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.apps.appid.keys.user",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/apps/{appId}/keys/user",
+      "summary": "List user-owned provider keys for app/tenant",
+      "tags": [
+        "Keys"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.auth.whoami",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/auth/whoami",
+      "summary": "Resolve current user and memberships",
+      "tags": [
+        "Auth"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.capabilities.catalog",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/capabilities/catalog",
+      "summary": "Get canonic capability catalog for CLI + APIs",
+      "tags": [
+        "Capabilities"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.dashboards.summary",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/dashboards/summary",
+      "summary": "Get cross-app dashboard summary",
+      "tags": [
+        "Dashboards"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.fuel.dashboard",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/fuel/dashboard",
+      "summary": "Get Fuel dashboard payload (Realtime + Estatistica)",
+      "tags": [
+        "Fuel"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.fuel.reconciliation",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/fuel/reconciliation",
+      "summary": "Get Fuel reconciliation payload (coverage + drift + segmentação)",
+      "tags": [
+        "Fuel"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.runs.runid",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/runs/{runId}",
+      "summary": "Get projected run state",
+      "tags": [
+        "Runs"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.timeline.intentionid",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/timeline/{intentionId}",
+      "summary": "Get timeline by intention",
+      "tags": [
+        "Timeline"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.traces.traceid",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/traces/{traceId}",
+      "summary": "Get causal trace tree",
+      "tags": [
+        "Traces"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.post.api.v1.alerts.ack",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/api/v1/alerts/ack",
+      "summary": "Acknowledge alert",
+      "tags": [
+        "Alerts"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.post.api.v1.apps.appid.keys.user",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/api/v1/apps/{appId}/keys/user",
+      "summary": "Create user-owned provider key",
+      "tags": [
+        "Keys"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.post.api.v1.auth.onboard.claim",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/api/v1/auth/onboard/claim",
+      "summary": "Claim memberships from allowlist",
+      "tags": [
+        "Auth"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.post.api.v1.auth.tenant.resolve",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/api/v1/auth/tenant/resolve",
+      "summary": "Resolve tenant by slug",
+      "tags": [
+        "Auth"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.post.api.v1.events.ingest",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/api/v1/events/ingest",
+      "summary": "Ingest operational event",
+      "tags": [
+        "Events"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "cli.logline.app.config-export",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline app config-export",
+      "summary": "Export ecosystem config JSON for an app to consume",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.app.create",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline app create",
+      "summary": "Register a new app under the current tenant",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "name",
+          "long": "name",
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.app.handshake",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline app handshake",
+      "summary": "Bidirectional handshake: store the app's service URL and API key",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "service_url",
+          "long": "service-url",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "api_key",
+          "long": "api-key",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "capabilities",
+          "long": "capabilities",
+          "short": null,
+          "required": false,
+          "help": "Comma-separated capabilities"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.app.issue-service-token",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline app issue-service-token",
+      "summary": "Issue a long-lived service token for app-to-app authentication",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "ttl_days",
+          "long": "ttl-days",
+          "short": null,
+          "required": false,
+          "help": "Token TTL in days (default: 30)"
+        },
+        {
+          "id": "capabilities",
+          "long": "capabilities",
+          "short": null,
+          "required": false,
+          "help": "Comma-separated capabilities (e.g. \"llm:call,fuel:emit\")"
+        },
+        {
+          "id": "description",
+          "long": "description",
+          "short": null,
+          "required": false,
+          "help": "Human-readable description"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.app.list",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline app list",
+      "summary": "List apps in the current tenant",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.app.list-service-tokens",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline app list-service-tokens",
+      "summary": "List service tokens for an app",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.app.revoke-service-token",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline app revoke-service-token",
+      "summary": "Revoke a service token",
+      "args": [
+        {
+          "id": "token_id",
+          "long": "token-id",
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.app.trust",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline app trust",
+      "summary": "Mark an app as trusted (can use billing delegation)",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "level",
+          "long": "level",
+          "short": null,
+          "required": false,
+          "help": "Trust level: standard, elevated, system"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.auth.debug",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline auth debug",
+      "summary": "Debug auth/RLS - show JWT claims and test PostgREST",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.auth.lock",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline auth lock",
+      "summary": "Lock session immediately (revoke access)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.auth.login",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline auth login",
+      "summary": "Login with email/password (Supabase Auth direct)",
+      "args": [
+        {
+          "id": "email",
+          "long": "email",
+          "short": null,
+          "required": false,
+          "help": "Email address"
+        },
+        {
+          "id": "passkey",
+          "long": "passkey",
+          "short": null,
+          "required": false,
+          "help": "Use passkey (Touch ID) to unlock stored refresh token"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.auth.logout",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline auth logout",
+      "summary": "Remove stored tokens and logout",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.auth.passkey-register",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline auth passkey-register",
+      "summary": "Register a passkey (Ed25519 keypair + Touch ID gate)",
+      "args": [
+        {
+          "id": "device_name",
+          "long": "device-name",
+          "short": null,
+          "required": false,
+          "help": "Device name for this passkey"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.auth.status",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline auth status",
+      "summary": "Show session status and remaining TTL",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.auth.unlock",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline auth unlock",
+      "summary": "Unlock session with Touch ID (required before any privileged command)",
+      "args": [
+        {
+          "id": "ttl",
+          "long": "ttl",
+          "short": null,
+          "required": false,
+          "help": "Session TTL (e.g. \"5m\", \"30m\", \"2h\"). Default: 30m"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.auth.whoami",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline auth whoami",
+      "summary": "Show current identity",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.backend.list",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline backend list",
+      "summary": null,
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.backend.test",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline backend test",
+      "summary": null,
+      "args": [
+        {
+          "id": "backend_id",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.broadcast.send",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline broadcast send",
+      "summary": "Send a message to a realtime channel",
+      "args": [
+        {
+          "id": "channel",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Channel name"
+        },
+        {
+          "id": "event",
+          "long": "event",
+          "short": null,
+          "required": false,
+          "help": "Event type"
+        },
+        {
+          "id": "payload",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "JSON payload"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.catalog.export",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline catalog export",
+      "summary": "Export CLI command catalog as JSON",
+      "args": [
+        {
+          "id": "output",
+          "long": "output",
+          "short": null,
+          "required": false,
+          "help": "Optional output path (stdout when omitted)"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.cicd.run",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline cicd run",
+      "summary": "Run the CI/CD pipeline defined in logline.cicd.json",
+      "args": [
+        {
+          "id": "pipeline",
+          "long": "pipeline",
+          "short": null,
+          "required": false,
+          "help": "Pipeline name (default: first pipeline in file)"
+        },
+        {
+          "id": "step",
+          "long": "step",
+          "short": null,
+          "required": false,
+          "help": "Run only a single step"
+        },
+        {
+          "id": "dry_run",
+          "long": "dry-run",
+          "short": null,
+          "required": false,
+          "help": "Show what would run without executing"
+        },
+        {
+          "id": "non_interactive",
+          "long": "non-interactive",
+          "short": null,
+          "required": false,
+          "help": "Non-interactive mode (for CI — reads creds from LOGLINE_* env vars)"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.cicd.status",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline cicd status",
+      "summary": "Show the status of the last pipeline run",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.db.describe",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline db describe",
+      "summary": "Describe a table: columns, types, constraints",
+      "args": [
+        {
+          "id": "table",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Table name"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.db.migrate.apply",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline db migrate apply",
+      "summary": "Apply pending migrations (requires recent review receipt + infra identity)",
+      "args": [
+        {
+          "id": "env",
+          "long": "env",
+          "short": null,
+          "required": false,
+          "help": "Environment label"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.db.migrate.review",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline db migrate review",
+      "summary": "Review pending migrations (generates diff, stores review receipt)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.db.migrate.status",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline db migrate status",
+      "summary": "Show migration status (applied vs pending)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.db.migrate.up",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline db migrate up",
+      "summary": "[Legacy] Apply all pending migrations without review gate",
+      "args": [
+        {
+          "id": "env",
+          "long": "env",
+          "short": null,
+          "required": false,
+          "help": "Environment label"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.db.query",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline db query",
+      "summary": "Execute a SQL query and return results as JSON",
+      "args": [
+        {
+          "id": "sql",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "SQL statement"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.db.tables",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline db tables",
+      "summary": "List all tables with row counts",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.db.verify-rls",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline db verify-rls",
+      "summary": "Verify RLS is enabled and policies exist on all tables (mandatory gate)",
+      "args": [
+        {
+          "id": "env",
+          "long": "env",
+          "short": null,
+          "required": false,
+          "help": "Environment label (for output only)"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.deploy.all",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline deploy all",
+      "summary": "Deploy everything: Supabase -> GitHub -> Vercel (with gates)",
+      "args": [
+        {
+          "id": "env",
+          "long": "env",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.deploy.github",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline deploy github",
+      "summary": "Deploy to GitHub: git push (and optionally create PR or release)",
+      "args": [
+        {
+          "id": "pr",
+          "long": "pr",
+          "short": null,
+          "required": false,
+          "help": "Create a PR instead of pushing directly"
+        },
+        {
+          "id": "title",
+          "long": "title",
+          "short": null,
+          "required": false,
+          "help": "PR title (required with --pr)"
+        },
+        {
+          "id": "base",
+          "long": "base",
+          "short": null,
+          "required": false,
+          "help": "Base branch for PR"
+        },
+        {
+          "id": "tag",
+          "long": "tag",
+          "short": null,
+          "required": false,
+          "help": "Create a release with this tag"
+        },
+        {
+          "id": "notes",
+          "long": "notes",
+          "short": null,
+          "required": false,
+          "help": "Release notes"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.deploy.supabase",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline deploy supabase",
+      "summary": "Deploy Supabase: run migrations + verify RLS",
+      "args": [
+        {
+          "id": "env",
+          "long": "env",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.deploy.vercel",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline deploy vercel",
+      "summary": "Deploy to Vercel: sync env vars + poll deployment",
+      "args": [
+        {
+          "id": "env",
+          "long": "env",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.dev.build",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline dev build",
+      "summary": "Build the Next.js app (npm run build with DATABASE_URL injected)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.dev.migrate-generate",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline dev migrate-generate",
+      "summary": "Generate Drizzle migration files (drizzle-kit generate with creds injected)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.dev.migrate-push",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline dev migrate-push",
+      "summary": "Push Drizzle schema to database (drizzle-kit push with creds injected)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.dev.start",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline dev start",
+      "summary": "Start the dev server (npm run dev with DATABASE_URL injected)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.events",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline events",
+      "summary": null,
+      "args": [
+        {
+          "id": "since",
+          "long": "since",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.founder.bootstrap",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline founder bootstrap",
+      "summary": "One-time world bootstrap (creates tenant, user, memberships, founder cap)",
+      "args": [
+        {
+          "id": "tenant_slug",
+          "long": "tenant-slug",
+          "short": null,
+          "required": true,
+          "help": "Tenant slug for the HQ tenant"
+        },
+        {
+          "id": "tenant_name",
+          "long": "tenant-name",
+          "short": null,
+          "required": true,
+          "help": "Tenant display name"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.fuel.emit",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline fuel emit",
+      "summary": "Emit a fuel event",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "units",
+          "long": "units",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "unit_type",
+          "long": "unit-type",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "source",
+          "long": "source",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "idempotency_key",
+          "long": "idempotency-key",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.fuel.list",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline fuel list",
+      "summary": "List fuel events (optionally filtered)",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": false,
+          "help": "Filter by app"
+        },
+        {
+          "id": "unit_type",
+          "long": "unit-type",
+          "short": null,
+          "required": false,
+          "help": "Filter by unit type"
+        },
+        {
+          "id": "limit",
+          "long": "limit",
+          "short": null,
+          "required": false,
+          "help": "Max results"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.fuel.reconcile",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline fuel reconcile",
+      "summary": "Run valuation reconciliation (L0 backfill window)",
+      "args": [
+        {
+          "id": "from",
+          "long": "from",
+          "short": null,
+          "required": false,
+          "help": "Window start (ISO-8601). Default: now - 24h"
+        },
+        {
+          "id": "to",
+          "long": "to",
+          "short": null,
+          "required": false,
+          "help": "Window end (ISO-8601). Default: now"
+        },
+        {
+          "id": "price_card_version",
+          "long": "price-card-version",
+          "short": null,
+          "required": false,
+          "help": "Price card version override"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.fuel.reconciliation-status",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline fuel reconciliation-status",
+      "summary": "Show valuation drift and precision coverage for recent days",
+      "args": [
+        {
+          "id": "days",
+          "long": "days",
+          "short": null,
+          "required": false,
+          "help": "Number of days to inspect"
+        },
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": false,
+          "help": "Filter by app"
+        },
+        {
+          "id": "source",
+          "long": "source",
+          "short": null,
+          "required": false,
+          "help": "Filter by source"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.fuel.summary",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline fuel summary",
+      "summary": "Get fuel summary (totals by app/unit_type)",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": false,
+          "help": "Filter by app"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.harness.cookbook",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline harness cookbook",
+      "summary": "Generate cookbook from the canonical capability catalog",
+      "args": [
+        {
+          "id": "root",
+          "long": "root",
+          "short": null,
+          "required": false,
+          "help": "Integration root path (contains scripts/generate-cookbook.mjs)"
+        },
+        {
+          "id": "output",
+          "long": "output",
+          "short": null,
+          "required": false,
+          "help": "Optional output markdown path"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.harness.intentions.generate",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline harness intentions generate",
+      "summary": "Generate a canonical manifest.intentions.json for logic/CLI release flow",
+      "args": [
+        {
+          "id": "root",
+          "long": "root",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "output",
+          "long": "output",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "workspace",
+          "long": "workspace",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "project",
+          "long": "project",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.harness.intentions.publish",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline harness intentions publish",
+      "summary": "Publish manifest.intentions.json through Code247 intake and persist linkage meta",
+      "args": [
+        {
+          "id": "root",
+          "long": "root",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "manifest",
+          "long": "manifest",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "ci_target",
+          "long": "ci-target",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "meta_output",
+          "long": "meta-output",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.harness.intentions.replay",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline harness intentions replay",
+      "summary": "Replay sync from a previous harness report (requires sync payload path in report)",
+      "args": [
+        {
+          "id": "root",
+          "long": "root",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "report",
+          "long": "report",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "meta_output",
+          "long": "meta-output",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.harness.intentions.sync",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline harness intentions sync",
+      "summary": "Sync execution status to Code247/Linear using a payload file",
+      "args": [
+        {
+          "id": "root",
+          "long": "root",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "payload",
+          "long": "payload",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "meta_output",
+          "long": "meta-output",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.harness.replay",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline harness replay",
+      "summary": "Replay a previous severe integration report (all scenarios or only failed ones)",
+      "args": [
+        {
+          "id": "root",
+          "long": "root",
+          "short": null,
+          "required": false,
+          "help": "Integration root path (contains TASKLIST-GERAL.md and scripts/)"
+        },
+        {
+          "id": "report",
+          "long": "report",
+          "short": null,
+          "required": true,
+          "help": "Existing report to replay"
+        },
+        {
+          "id": "failed_only",
+          "long": "failed-only",
+          "short": null,
+          "required": false,
+          "help": "Replay only failed scenarios from the report"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.harness.run",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline harness run",
+      "summary": "Run the unified severe integration pipeline and write an auditable report",
+      "args": [
+        {
+          "id": "root",
+          "long": "root",
+          "short": null,
+          "required": false,
+          "help": "Integration root path (contains TASKLIST-GERAL.md and scripts/)"
+        },
+        {
+          "id": "report",
+          "long": "report",
+          "short": null,
+          "required": false,
+          "help": "Output report path (default: <root>/artifacts/integration-severe-report.json)"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.init",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline init",
+      "summary": null,
+      "args": [
+        {
+          "id": "force",
+          "long": "force",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.onboard",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline onboard",
+      "summary": "Interactive wizard to onboard a new app into the ecosystem",
+      "args": [
+        {
+          "id": "app_id",
+          "long": "app-id",
+          "short": null,
+          "required": false,
+          "help": "App ID (will prompt if not provided)"
+        },
+        {
+          "id": "yes",
+          "long": "yes",
+          "short": null,
+          "required": false,
+          "help": "Skip interactive prompts and use defaults"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.profile.list",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline profile list",
+      "summary": null,
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.profile.use",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline profile use",
+      "summary": null,
+      "args": [
+        {
+          "id": "profile_id",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.ready",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline ready",
+      "summary": "Pre-flight check: vault + session + identity + pipeline readiness",
+      "args": [
+        {
+          "id": "pipeline",
+          "long": "pipeline",
+          "short": null,
+          "required": false,
+          "help": "Pipeline to check readiness for"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.run",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline run",
+      "summary": null,
+      "args": [
+        {
+          "id": "intent",
+          "long": "intent",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "args",
+          "long": "arg",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.secrets.clear",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline secrets clear",
+      "summary": "Remove ALL stored credentials",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.secrets.doctor",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline secrets doctor",
+      "summary": "Check vault completeness against pipeline requirements",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.secrets.get",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline secrets get",
+      "summary": "Retrieve a credential from Keychain (requires unlocked session)",
+      "args": [
+        {
+          "id": "key",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Credential key"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.secrets.ls",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline secrets ls",
+      "summary": "List all stored credential keys (names only, never values)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.secrets.rm",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline secrets rm",
+      "summary": "Remove a credential from Keychain",
+      "args": [
+        {
+          "id": "key",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Credential key to remove"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.secrets.set",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline secrets set",
+      "summary": "Store a credential in macOS Keychain (prompted, never echoed)",
+      "args": [
+        {
+          "id": "key",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Credential key (e.g. github_token, database_url)"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.status",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline status",
+      "summary": null,
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.stop",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline stop",
+      "summary": null,
+      "args": [
+        {
+          "id": "run_id",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.storage.delete",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline storage delete",
+      "summary": "Delete a file from storage",
+      "args": [
+        {
+          "id": "remote_path",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Remote path in bucket"
+        },
+        {
+          "id": "bucket",
+          "long": "bucket",
+          "short": null,
+          "required": false,
+          "help": "Storage bucket"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.storage.download",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline storage download",
+      "summary": "Download a file from storage",
+      "args": [
+        {
+          "id": "remote_path",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Remote path in bucket"
+        },
+        {
+          "id": "bucket",
+          "long": "bucket",
+          "short": null,
+          "required": false,
+          "help": "Storage bucket"
+        },
+        {
+          "id": "output",
+          "long": "output",
+          "short": null,
+          "required": false,
+          "help": "Local destination (defaults to filename)"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.storage.list",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline storage list",
+      "summary": "List files in a bucket",
+      "args": [
+        {
+          "id": "bucket",
+          "long": "bucket",
+          "short": null,
+          "required": false,
+          "help": "Storage bucket"
+        },
+        {
+          "id": "prefix",
+          "long": "prefix",
+          "short": null,
+          "required": false,
+          "help": "Path prefix to filter"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.storage.sign",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline storage sign",
+      "summary": "Generate a signed URL for a file",
+      "args": [
+        {
+          "id": "remote_path",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Remote path in bucket"
+        },
+        {
+          "id": "bucket",
+          "long": "bucket",
+          "short": null,
+          "required": false,
+          "help": "Storage bucket"
+        },
+        {
+          "id": "expires_in",
+          "long": "expires-in",
+          "short": null,
+          "required": false,
+          "help": "URL expiration in seconds"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.storage.upload",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline storage upload",
+      "summary": "Upload a file to storage",
+      "args": [
+        {
+          "id": "file",
+          "long": null,
+          "short": null,
+          "required": true,
+          "help": "Local file path"
+        },
+        {
+          "id": "bucket",
+          "long": "bucket",
+          "short": null,
+          "required": false,
+          "help": "Storage bucket"
+        },
+        {
+          "id": "path",
+          "long": "path",
+          "short": null,
+          "required": false,
+          "help": "Remote path (defaults to filename)"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.supabase.check",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline supabase check",
+      "summary": null,
+      "args": [
+        {
+          "id": "workdir",
+          "long": "workdir",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.supabase.link",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline supabase link",
+      "summary": null,
+      "args": [
+        {
+          "id": "project_ref",
+          "long": "project-ref",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "workdir",
+          "long": "workdir",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.supabase.migrate",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline supabase migrate",
+      "summary": null,
+      "args": [
+        {
+          "id": "workdir",
+          "long": "workdir",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.supabase.projects",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline supabase projects",
+      "summary": null,
+      "args": [
+        {
+          "id": "workdir",
+          "long": "workdir",
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.supabase.raw",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline supabase raw",
+      "summary": null,
+      "args": [
+        {
+          "id": "workdir",
+          "long": "workdir",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "args",
+          "long": null,
+          "short": null,
+          "required": false,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.supabase.store-token",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline supabase store-token",
+      "summary": "Store Supabase access token in OS keychain (never on disk)",
+      "args": []
+    },
+    {
+      "capability_id": "cli.logline.tenant.allowlist-add",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline tenant allowlist-add",
+      "summary": "Add an email to the tenant allowlist",
+      "args": [
+        {
+          "id": "email",
+          "long": "email",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "role",
+          "long": "role",
+          "short": null,
+          "required": false,
+          "help": null
+        },
+        {
+          "id": "app_defaults",
+          "long": "app-defaults",
+          "short": null,
+          "required": false,
+          "help": "Comma-separated app:role pairs (e.g. \"ublx:member,llm-gateway:member\")"
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.tenant.create",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline tenant create",
+      "summary": "Create a new tenant (founder only)",
+      "args": [
+        {
+          "id": "slug",
+          "long": "slug",
+          "short": null,
+          "required": true,
+          "help": null
+        },
+        {
+          "id": "name",
+          "long": "name",
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    },
+    {
+      "capability_id": "cli.logline.tenant.resolve",
+      "surface": "cli",
+      "service_id": "logic-cli",
+      "command": "logline tenant resolve",
+      "summary": "Resolve tenant by slug",
+      "args": [
+        {
+          "id": "slug",
+          "long": "slug",
+          "short": null,
+          "required": true,
+          "help": null
+        }
+      ]
+    }
+  ]
+}

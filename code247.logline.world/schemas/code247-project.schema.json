@@ -1,0 +1,410 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code247.dev/schemas/project-manifest/1.0",
+  "title": "Code247 Project Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project",
+    "constitution",
+    "gates",
+    "execution"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.0$",
+      "description": "Manifest schema version. This validator supports 1.0."
+    },
+    "project": {
+      "$ref": "#/$defs/project"
+    },
+    "constitution": {
+      "$ref": "#/$defs/constitution"
+    },
+    "contracts": {
+      "$ref": "#/$defs/contracts"
+    },
+    "policy_config": {
+      "$ref": "#/$defs/policy_config"
+    },
+    "gates": {
+      "$ref": "#/$defs/gates"
+    },
+    "task_sources": {
+      "$ref": "#/$defs/task_sources"
+    },
+    "execution": {
+      "$ref": "#/$defs/execution"
+    }
+  },
+  "$defs": {
+    "pathArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "id",
+        "default_branch"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9\\-_.]{1,63}$"
+        },
+        "default_branch": {
+          "type": "string",
+          "minLength": 1,
+          "default": "main"
+        }
+      }
+    },
+    "constitution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canon_docs",
+        "adrs",
+        "invariants",
+        "roadmap",
+        "runbooks"
+      ],
+      "properties": {
+        "canon_docs": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "adrs": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "invariants": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "roadmap": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "runbooks": {
+          "$ref": "#/$defs/pathArray"
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemas_paths",
+        "openapi_paths",
+        "events_registry"
+      ],
+      "properties": {
+        "schemas_paths": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "openapi_paths": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "events_registry": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "default": {
+        "schemas_paths": [],
+        "openapi_paths": [],
+        "events_registry": ""
+      }
+    },
+    "policy_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_paths",
+        "validation_command"
+      ],
+      "properties": {
+        "config_paths": {
+          "$ref": "#/$defs/pathArray"
+        },
+        "validation_command": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": {
+        "config_paths": [],
+        "validation_command": "pnpm validate:config"
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commands"
+      ],
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gate0",
+        "per_area"
+      ],
+      "properties": {
+        "gate0": {
+          "$ref": "#/$defs/gate"
+        },
+        "per_area": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "contracts": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "config": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "tests": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "types": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "security": {
+              "$ref": "#/$defs/stringArray"
+            }
+          },
+          "default": {}
+        }
+      }
+    },
+    "task_sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary"
+      ],
+      "properties": {
+        "primary": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "jira",
+            "github",
+            "manual"
+          ],
+          "default": "manual"
+        },
+        "project_key": {
+          "type": "string",
+          "default": ""
+        },
+        "ready_states": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "done_states": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "blocked_states": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "linear": {
+          "$ref": "#/$defs/linear_task_source"
+        }
+      },
+      "default": {
+        "primary": "manual",
+        "project_key": "",
+        "ready_states": [],
+        "done_states": [],
+        "blocked_states": []
+      }
+    },
+    "linear_task_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "endpoint",
+        "auth",
+        "claim"
+      ],
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "default": "https://api.linear.app/graphql",
+          "description": "Linear GraphQL endpoint."
+        },
+        "auth": {
+          "$ref": "#/$defs/linear_auth"
+        },
+        "claim": {
+          "$ref": "#/$defs/linear_claim"
+        },
+        "filters": {
+          "$ref": "#/$defs/linear_filters"
+        },
+        "polling": {
+          "$ref": "#/$defs/linear_polling"
+        }
+      }
+    },
+    "linear_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "token_env"
+      ],
+      "properties": {
+        "token_env": {
+          "type": "string",
+          "minLength": 1,
+          "default": "LINEAR_API_KEY",
+          "description": "Environment variable containing the Linear API key."
+        }
+      }
+    },
+    "linear_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "label",
+            "assignee",
+            "label_or_assignee"
+          ],
+          "default": "label",
+          "description": "How Code247 determines an issue is claimable."
+        },
+        "label": {
+          "type": "string",
+          "default": "agent:code247",
+          "description": "Label required when strategy uses labels."
+        },
+        "assignee_is_bot_ok": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, issues assigned to the bot are claimable."
+        }
+      }
+    },
+    "linear_filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "team_key": {
+          "type": "string",
+          "default": ""
+        },
+        "project_name": {
+          "type": "string",
+          "default": ""
+        },
+        "include_labels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "exclude_labels": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "max_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "min_priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        }
+      },
+      "default": {}
+    },
+    "linear_polling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interval_seconds": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 3600,
+          "default": 90
+        },
+        "page_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250,
+          "default": 50
+        }
+      },
+      "default": {}
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "work_branch_prefix",
+        "max_files_changed",
+        "max_diff_lines",
+        "require_how_to_test",
+        "require_acceptance"
+      ],
+      "properties": {
+        "work_branch_prefix": {
+          "type": "string",
+          "minLength": 1,
+          "default": "code247/"
+        },
+        "max_files_changed": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 60
+        },
+        "max_diff_lines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50000,
+          "default": 1200
+        },
+        "require_how_to_test": {
+          "type": "boolean",
+          "default": true
+        },
+        "require_acceptance": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}

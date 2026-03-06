@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "workspace": {
+    "name": "Integration",
+    "id": "integration",
+    "default_branch": "main"
+  },
+  "constitution": {
+    "canon_docs": [
+      "LOGLINE_ECOSYSTEM_NORMATIVE_BASE.md",
+      "INTEGRATION_BLUEPRINT.md",
+      "SERVICE_TOPOLOGY.md"
+    ],
+    "adrs": [],
+    "invariants": [
+      "FUEL_LEDGER_SPEC.md"
+    ],
+    "roadmap": [
+      "TASKLIST.md"
+    ],
+    "runbooks": [
+      "INFRA_RUNBOOK.md",
+      "SUPABASE_FOUNDATION.md"
+    ]
+  },
+  "contracts": {
+    "schemas_paths": [
+      "canon/workspace-ast/0.1"
+    ],
+    "openapi_paths": [],
+    "events_registry": ""
+  },
+  "policy": {
+    "config_paths": [
+      "ecosystem.config.cjs",
+      "cloudflared-config.yml"
+    ],
+    "validation_command": "node -e \"console.log('integration policy check ok')\""
+  },
+  "gates": {
+    "gate0": {
+      "commands": [
+        "test -f INTEGRATION_BLUEPRINT.md",
+        "test -f LOGLINE_ECOSYSTEM_NORMATIVE_BASE.md"
+      ]
+    },
+    "per_area": {
+      "contracts": [
+        "test -d canon"
+      ],
+      "policy": [
+        "test -f ecosystem.config.cjs"
+      ],
+      "tests": [],
+      "types": [],
+      "security": []
+    }
+  },
+  "inputs": {
+    "primary": "linear",
+    "linear": {
+      "endpoint": "https://api.linear.app/graphql",
+      "auth": {
+        "token_env": "LINEAR_API_KEY"
+      },
+      "claim": {
+        "strategy": "label",
+        "label": "agent:runner",
+        "assignee_is_bot_ok": true
+      },
+      "filters": {
+        "team_key": "",
+        "project_name": "",
+        "include_labels": [],
+        "exclude_labels": [],
+        "min_priority": 0,
+        "max_priority": 4
+      },
+      "polling": {
+        "interval_seconds": 90,
+        "page_size": 50
+      }
+    }
+  },
+  "execution": {
+    "work_branch_prefix": "runner/",
+    "max_files_changed": 60,
+    "max_diff_lines": 1200,
+    "require_how_to_test": true,
+    "require_acceptance": true
+  }
+}
