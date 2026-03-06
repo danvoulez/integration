@@ -1,0 +1,633 @@
+openapi: 3.0.3
+info:
+  title: OBS API
+  version: 1.0.0
+  description: |
+    Operational observability API for ingest, timeline, traces, runs, summaries, alerts, and auth support.
+servers:
+  - url: https://obs-api.logline.world
+  - url: http://localhost:3001
+
+tags:
+  - name: Events
+  - name: Timeline
+  - name: Traces
+  - name: Runs
+  - name: Dashboards
+  - name: Fuel
+  - name: Capabilities
+  - name: Alerts
+  - name: Auth
+  - name: Keys
+
+paths:
+  /api/v1/events/ingest:
+    post:
+      tags: [Events]
+      summary: Ingest operational event
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObsEventIngestRequest'
+      responses:
+        '200':
+          description: Accepted deduplicated event
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    properties:
+                      ok: { type: boolean }
+                      accepted: { type: boolean }
+                      dedup: { type: boolean }
+                      event_id: { type: string }
+        '201':
+          description: Accepted new event
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    properties:
+                      ok: { type: boolean }
+                      accepted: { type: boolean }
+                      dedup: { type: boolean }
+                      event_id: { type: string }
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/timeline/{intentionId}:
+    get:
+      tags: [Timeline]
+      summary: Get timeline by intention
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: intentionId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: order
+          schema: { type: string, enum: [asc, desc] }
+        - in: query
+          name: include_related
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Timeline payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/traces/{traceId}:
+    get:
+      tags: [Traces]
+      summary: Get causal trace tree
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: traceId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+        - in: query
+          name: order
+          schema: { type: string, enum: [asc, desc] }
+      responses:
+        '200':
+          description: Trace payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+
+  /api/v1/runs/{runId}:
+    get:
+      tags: [Runs]
+      summary: Get projected run state
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: recent_limit
+          schema: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Run state
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+
+  /api/v1/dashboards/summary:
+    get:
+      tags: [Dashboards]
+      summary: Get cross-app dashboard summary
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: window_minutes
+          schema: { type: integer, minimum: 5, maximum: 1440 }
+        - in: query
+          name: stale_run_minutes
+          schema: { type: integer, minimum: 5, maximum: 10080 }
+        - in: query
+          name: max_rows
+          schema: { type: integer, minimum: 100, maximum: 10000 }
+      responses:
+        '200':
+          description: Summary payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/fuel/dashboard:
+    get:
+      tags: [Fuel]
+      summary: Get Fuel dashboard payload (Realtime + Estatistica)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: realtime_window_minutes
+          schema: { type: integer, minimum: 5, maximum: 1440 }
+        - in: query
+          name: max_rows
+          schema: { type: integer, minimum: 12, maximum: 1000 }
+        - in: query
+          name: preset
+          schema: { type: string, enum: [today, yesterday, month, custom] }
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: tenant_id
+          schema: { type: string }
+        - in: query
+          name: app_id
+          schema: { type: string }
+      responses:
+        '200':
+          description: Fuel dashboard payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/fuel/reconciliation:
+    get:
+      tags: [Fuel]
+      summary: Get Fuel reconciliation payload (coverage + drift + segmentação)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 90 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: tenant_id
+          schema: { type: string }
+        - in: query
+          name: app_id
+          schema: { type: string }
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: provider
+          schema: { type: string }
+        - in: query
+          name: model
+          schema: { type: string }
+      responses:
+        '200':
+          description: Fuel reconciliation payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/capabilities/catalog:
+    get:
+      tags: [Capabilities]
+      summary: Get canonic capability catalog for CLI + APIs
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: service_id
+          schema: { type: string }
+        - in: query
+          name: surface
+          schema: { type: string, enum: [all, cli, api] }
+      responses:
+        '200':
+          description: Capability catalog payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '500':
+          $ref: '#/components/responses/Error500'
+
+  /api/v1/alerts/open:
+    get:
+      tags: [Alerts]
+      summary: List open alerts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: window_minutes
+          schema: { type: integer, minimum: 5, maximum: 10080 }
+        - in: query
+          name: stale_run_minutes
+          schema: { type: integer, minimum: 5, maximum: 10080 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+      responses:
+        '200':
+          description: Open alerts payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/alerts/ack:
+    post:
+      tags: [Alerts]
+      summary: Acknowledge alert
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alert_id, reason]
+              properties:
+                alert_id: { type: string }
+                reason: { type: string }
+                actor: { type: string }
+      responses:
+        '200':
+          description: Alert acknowledged
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    properties:
+                      ok: { type: boolean }
+                      state: { type: string }
+                      alert:
+                        type: object
+                        additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+
+  /api/v1/auth/whoami:
+    get:
+      tags: [Auth]
+      summary: Resolve current user and memberships
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile and memberships
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    properties:
+                      user:
+                        type: object
+                        additionalProperties: true
+                      memberships:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/auth/tenant/resolve:
+    post:
+      tags: [Auth]
+      summary: Resolve tenant by slug
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug]
+              properties:
+                slug: { type: string }
+      responses:
+        '200':
+          description: Tenant payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+
+  /api/v1/auth/onboard/claim:
+    post:
+      tags: [Auth]
+      summary: Claim memberships from allowlist
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Claim result
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    properties:
+                      ok: { type: boolean }
+                      memberships:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/apps/{appId}/keys/user:
+    get:
+      tags: [Keys]
+      summary: List user-owned provider keys for app/tenant
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: appId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: tenant_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Key rows
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    properties:
+                      keys:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+    post:
+      tags: [Keys]
+      summary: Create user-owned provider key
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: appId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, provider, key_label, encrypted_key]
+              properties:
+                tenant_id: { type: string }
+                provider: { type: string }
+                key_label: { type: string }
+                encrypted_key: { type: string }
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Created key row
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error400:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error401:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error404:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error409:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Error500:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    ResponseEnvelopeBase:
+      type: object
+      required: [request_id, output_schema]
+      properties:
+        request_id: { type: string }
+        output_schema:
+          type: string
+          const: https://logline.world/schemas/response-envelope.v1.schema.json
+
+    ErrorEnvelope:
+      type: object
+      required: [request_id, output_schema, error]
+      properties:
+        request_id: { type: string }
+        output_schema:
+          type: string
+          const: https://logline.world/schemas/error-envelope.v1.schema.json
+        error:
+          type: object
+          required: [type, code, message]
+          properties:
+            type: { type: string }
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: object
+              additionalProperties: true
+
+    ObsEventIngestRequest:
+      type: object
+      required:
+        [event_id, event_type, occurred_at, source, request_id, payload]
+      properties:
+        event_id: { type: string }
+        event_type: { type: string }
+        occurred_at: { type: string, format: date-time }
+        source: { type: string }
+        request_id: { type: string }
+        trace_id: { type: string, nullable: true }
+        parent_event_id: { type: string, nullable: true }
+        intention_id: { type: string, nullable: true }
+        run_id: { type: string, nullable: true }
+        issue_id: { type: string, nullable: true }
+        pr_id: { type: string, nullable: true }
+        deploy_id: { type: string, nullable: true }
+        payload:
+          type: object
+          additionalProperties: true

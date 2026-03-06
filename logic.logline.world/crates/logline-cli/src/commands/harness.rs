@@ -1,0 +1,802 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Instant;
+
+use anyhow::{Context, Result, bail};
+use clap::Subcommand;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+#[derive(Debug, Subcommand)]
+pub enum HarnessCommands {
+    /// Run the unified severe integration pipeline and write an auditable report.
+    Run {
+        /// Integration root path (contains TASKLIST-GERAL.md and scripts/)
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Output report path (default: <root>/artifacts/integration-severe-report.json)
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
+    /// Replay a previous severe integration report (all scenarios or only failed ones).
+    Replay {
+        /// Integration root path (contains TASKLIST-GERAL.md and scripts/)
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Existing report to replay
+        #[arg(long)]
+        report: PathBuf,
+        /// Replay only failed scenarios from the report
+        #[arg(long)]
+        failed_only: bool,
+    },
+    /// Generate cookbook from the canonical capability catalog.
+    Cookbook {
+        /// Integration root path (contains scripts/generate-cookbook.mjs)
+        #[arg(long)]
+        root: Option<PathBuf>,
+        /// Optional output markdown path
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Standardized intentions flow (generate/publish/sync/replay).
+    Intentions {
+        #[command(subcommand)]
+        command: IntentionsCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum IntentionsCommands {
+    /// Generate a canonical manifest.intentions.json for logic/CLI release flow.
+    Generate {
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long, default_value = "logic.logline.world")]
+        workspace: String,
+        #[arg(long, default_value = "logic-cli")]
+        project: String,
+    },
+    /// Publish manifest.intentions.json through Code247 intake and persist linkage meta.
+    Publish {
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        #[arg(long, default_value = "code247-ci/main")]
+        ci_target: String,
+        #[arg(long)]
+        meta_output: Option<PathBuf>,
+    },
+    /// Sync execution status to Code247/Linear using a payload file.
+    Sync {
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long)]
+        payload: PathBuf,
+        #[arg(long)]
+        meta_output: Option<PathBuf>,
+    },
+    /// Replay sync from a previous harness report (requires sync payload path in report).
+    Replay {
+        #[arg(long)]
+        root: Option<PathBuf>,
+        #[arg(long)]
+        report: PathBuf,
+        #[arg(long)]
+        meta_output: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CommandRecord {
+    argv: Vec<String>,
+    cwd: String,
+    env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ExecutionRecord {
+    id: String,
+    title: String,
+    applicable: bool,
+    status: String,
+    elapsed_ms: u128,
+    command: Option<CommandRecord>,
+    exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stdout: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stderr: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HarnessReport {
+    report_version: String,
+    request_id: String,
+    generated_at: String,
+    root: String,
+    pipeline: String,
+    steps: Vec<ExecutionRecord>,
+    scenarios: Vec<ExecutionRecord>,
+    summary: Value,
+}
+
+#[derive(Debug, Clone)]
+struct ScenarioDefinition {
+    id: &'static str,
+    title: &'static str,
+    argv: Vec<String>,
+    env: Vec<(&'static str, &'static str)>,
+}
+
+pub fn cmd_harness(command: HarnessCommands, json: bool) -> Result<()> {
+    match command {
+        HarnessCommands::Run { root, report } => cmd_harness_run(root, report, json),
+        HarnessCommands::Replay {
+            root,
+            report,
+            failed_only,
+        } => cmd_harness_replay(root, &report, failed_only, json),
+        HarnessCommands::Cookbook { root, output } => cmd_harness_cookbook(root, output, json),
+        HarnessCommands::Intentions { command } => cmd_harness_intentions(command, json),
+    }
+}
+
+fn cmd_harness_run(root: Option<PathBuf>, report: Option<PathBuf>, json: bool) -> Result<()> {
+    let root = resolve_root(root)?;
+    let request_id = format!("logic-harness-{}", Uuid::new_v4());
+    let report_path =
+        report.unwrap_or_else(|| root.join("artifacts").join("integration-severe-report.json"));
+
+    let mut steps = Vec::new();
+    steps.push(run_external_step(
+        "STEP-000",
+        "Smoke gate (script integrity)",
+        &root,
+        &[
+            "bash".to_string(),
+            "-n".to_string(),
+            "scripts/smoke.sh".to_string(),
+        ],
+        &[],
+    ));
+    steps.push(run_external_step(
+        "STEP-001",
+        "Sync Canon schemas + generated TypeScript check",
+        &root,
+        &[
+            "bash".to_string(),
+            "scripts/sync-canon-schemas.sh".to_string(),
+            "--check".to_string(),
+        ],
+        &[],
+    ));
+    steps.push(run_external_step(
+        "STEP-002",
+        "Generate cookbook from canonical capability catalog",
+        &root,
+        &[
+            "node".to_string(),
+            "scripts/generate-cookbook.mjs".to_string(),
+        ],
+        &[],
+    ));
+    steps.push(run_external_step(
+        "STEP-003",
+        "Validate contracts/policy/openapi globally",
+        &root,
+        &[
+            "bash".to_string(),
+            "scripts/validate-contracts.sh".to_string(),
+        ],
+        &[],
+    ));
+
+    let scenarios = run_integration_severe_suite(&root);
+
+    let step_failures = steps
+        .iter()
+        .filter(|item| item.status == "failed")
+        .count();
+    let scenario_failures = scenarios
+        .iter()
+        .filter(|item| item.applicable && item.status == "failed")
+        .count();
+    let scenario_skipped = scenarios
+        .iter()
+        .filter(|item| item.status == "skipped")
+        .count();
+
+    let report_payload = HarnessReport {
+        report_version: "logic.integration-severe.report.v1".to_string(),
+        request_id: request_id.clone(),
+        generated_at: chrono::Utc::now().to_rfc3339(),
+        root: root.display().to_string(),
+        pipeline: "smoke+contracts+integration-severe+report".to_string(),
+        steps,
+        scenarios,
+        summary: json!({
+            "ok": step_failures == 0 && scenario_failures == 0,
+            "step_failures": step_failures,
+            "scenario_failures": scenario_failures,
+            "scenario_skipped": scenario_skipped,
+        }),
+    };
+
+    write_json_file(&report_path, &report_payload)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report_payload)?);
+    } else {
+        println!("Integration severe pipeline completed.");
+        println!("request_id: {request_id}");
+        println!("report: {}", report_path.display());
+        println!(
+            "summary: ok={} step_failures={} scenario_failures={} skipped={}",
+            report_payload.summary["ok"].as_bool().unwrap_or(false),
+            report_payload.summary["step_failures"].as_u64().unwrap_or(0),
+            report_payload.summary["scenario_failures"].as_u64().unwrap_or(0),
+            report_payload.summary["scenario_skipped"].as_u64().unwrap_or(0)
+        );
+    }
+
+    if !report_payload.summary["ok"].as_bool().unwrap_or(false) {
+        bail!(
+            "integration-severe failed (step_failures={}, scenario_failures={})",
+            report_payload.summary["step_failures"],
+            report_payload.summary["scenario_failures"],
+        );
+    }
+
+    Ok(())
+}
+
+fn cmd_harness_replay(
+    root: Option<PathBuf>,
+    report_path: &Path,
+    failed_only: bool,
+    json: bool,
+) -> Result<()> {
+    let root = resolve_root(root)?;
+    let raw = fs::read_to_string(report_path)
+        .with_context(|| format!("failed to read report {}", report_path.display()))?;
+    let existing: HarnessReport = serde_json::from_str(&raw)
+        .with_context(|| format!("invalid report JSON {}", report_path.display()))?;
+
+    let mut scenarios_to_run = Vec::new();
+    for scenario in &existing.scenarios {
+        if !scenario.applicable {
+            continue;
+        }
+        if failed_only && scenario.status != "failed" {
+            continue;
+        }
+        let Some(command) = scenario.command.as_ref() else {
+            continue;
+        };
+        scenarios_to_run.push(ScenarioDefinition {
+            id: Box::leak(scenario.id.clone().into_boxed_str()),
+            title: Box::leak(scenario.title.clone().into_boxed_str()),
+            argv: command.argv.clone(),
+            env: command
+                .env
+                .iter()
+                .map(|(k, v)| {
+                    let key = Box::leak(k.clone().into_boxed_str());
+                    let value = Box::leak(v.clone().into_boxed_str());
+                    (key as &'static str, value as &'static str)
+                })
+                .collect(),
+        });
+    }
+
+    let replay_results = scenarios_to_run
+        .iter()
+        .map(|scenario| run_scenario(&root, scenario))
+        .collect::<Vec<_>>();
+    let replay_failures = replay_results
+        .iter()
+        .filter(|item| item.status == "failed")
+        .count();
+
+    let replay_report = json!({
+        "report_version": "logic.integration-severe.replay.v1",
+        "source_report": report_path,
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "failed_only": failed_only,
+        "ok": replay_failures == 0,
+        "scenario_failures": replay_failures,
+        "scenarios": replay_results,
+    });
+
+    let output_path = report_path.with_extension("replay.json");
+    write_json_file(&output_path, &replay_report)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&replay_report)?);
+    } else {
+        println!("Replay complete. report: {}", output_path.display());
+    }
+
+    if replay_failures > 0 {
+        bail!("replay failed with {replay_failures} scenario(s)");
+    }
+
+    Ok(())
+}
+
+fn cmd_harness_cookbook(root: Option<PathBuf>, output: Option<PathBuf>, json: bool) -> Result<()> {
+    let root = resolve_root(root)?;
+    let mut argv = vec!["node".to_string(), "scripts/generate-cookbook.mjs".to_string()];
+    if let Some(path) = output.as_ref() {
+        argv.push(path.display().to_string());
+    }
+    let result = run_external_step(
+        "COOKBOOK",
+        "Generate cookbook from canonical catalog",
+        &root,
+        &argv,
+        &[],
+    );
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        println!(
+            "Cookbook generation status: {} ({})",
+            result.status, result.title
+        );
+    }
+
+    if result.status != "ok" {
+        bail!("cookbook generation failed");
+    }
+    Ok(())
+}
+
+fn cmd_harness_intentions(command: IntentionsCommands, json: bool) -> Result<()> {
+    match command {
+        IntentionsCommands::Generate {
+            root,
+            output,
+            workspace,
+            project,
+        } => cmd_intentions_generate(root, output, &workspace, &project, json),
+        IntentionsCommands::Publish {
+            root,
+            manifest,
+            ci_target,
+            meta_output,
+        } => cmd_intentions_publish(root, manifest, &ci_target, meta_output, json),
+        IntentionsCommands::Sync {
+            root,
+            payload,
+            meta_output,
+        } => cmd_intentions_sync(root, &payload, meta_output, json),
+        IntentionsCommands::Replay {
+            root,
+            report,
+            meta_output,
+        } => cmd_intentions_replay(root, &report, meta_output, json),
+    }
+}
+
+fn cmd_intentions_generate(
+    root: Option<PathBuf>,
+    output: Option<PathBuf>,
+    workspace: &str,
+    project: &str,
+    json: bool,
+) -> Result<()> {
+    let root = resolve_root(root)?;
+    let output_path = output.unwrap_or_else(|| {
+        root.join("logic.logline.world")
+            .join(".code247")
+            .join("manifest.intentions.json")
+    });
+
+    let payload = json!({
+        "workspace": workspace,
+        "project": project,
+        "updated_at": chrono::Utc::now().to_rfc3339(),
+        "intentions": [
+            {
+                "id": "logic-agent-c-integration-severe",
+                "title": "Logic/CLI integration severe harness",
+                "type": "hardening",
+                "scope": "backend",
+                "priority": "high",
+                "tasks": [
+                    {"description": "LOGIC-001 consolidate CLI/runtime intentions+sync+replay", "owner": "agent-c", "gate": "harness"},
+                    {"description": "LOGIC-002 contracts policy/gates consumable sem adapters ad-hoc", "owner": "agent-c", "gate": "contracts"},
+                    {"description": "LOGIC-003 output estável para auditoria/replay", "owner": "agent-c", "gate": "report"},
+                    {"description": "LOGIC-007 publish/sync linkage release flow", "owner": "agent-c", "gate": "intentions"},
+                    {"description": "LOGIC-008 cookbook auto do catálogo canônico", "owner": "agent-c", "gate": "catalog"},
+                    {"description": "LOGIC-009 hardening auth policy + schema updates", "owner": "agent-c", "gate": "auth"},
+                    {"description": "LOGIC-010 sync Canon AST -> schema/TypeScript", "owner": "agent-c", "gate": "schema"}
+                ]
+            }
+        ]
+    });
+
+    write_json_file(&output_path, &payload)?;
+    crate::pout(
+        json,
+        json!({
+            "ok": true,
+            "manifest": output_path,
+        }),
+        &format!("Manifest generated: {}", output_path.display()),
+    )
+}
+
+fn cmd_intentions_publish(
+    root: Option<PathBuf>,
+    manifest: Option<PathBuf>,
+    ci_target: &str,
+    meta_output: Option<PathBuf>,
+    json: bool,
+) -> Result<()> {
+    let root = resolve_root(root)?;
+    let manifest_path = manifest.unwrap_or_else(|| {
+        root.join("logic.logline.world")
+            .join(".code247")
+            .join("manifest.intentions.json")
+    });
+    if !manifest_path.exists() {
+        cmd_intentions_generate(None, Some(manifest_path.clone()), "logic.logline.world", "logic-cli", true)?;
+    }
+
+    let meta_path = meta_output.unwrap_or_else(|| {
+        root.join("logic.logline.world")
+            .join(".code247")
+            .join("linear-meta.json")
+    });
+    let argv = vec![
+        "bash".to_string(),
+        "scripts/publish-intentions.sh".to_string(),
+        manifest_path.display().to_string(),
+        ci_target.to_string(),
+        meta_path.display().to_string(),
+    ];
+    let result = run_external_step("INTENTIONS-PUBLISH", "Publish intentions", &root, &argv, &[]);
+    if result.status != "ok" {
+        bail!(
+            "intentions publish failed: {}",
+            result.error.unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
+
+    crate::pout(
+        json,
+        json!({
+            "ok": true,
+            "manifest": manifest_path,
+            "meta_output": meta_path,
+        }),
+        &format!("Intentions published. linkage: {}", meta_path.display()),
+    )
+}
+
+fn cmd_intentions_sync(
+    root: Option<PathBuf>,
+    payload: &Path,
+    meta_output: Option<PathBuf>,
+    json: bool,
+) -> Result<()> {
+    let root = resolve_root(root)?;
+    if !payload.exists() {
+        bail!("sync payload not found: {}", payload.display());
+    }
+
+    let meta_path = meta_output.unwrap_or_else(|| {
+        root.join("logic.logline.world")
+            .join(".code247")
+            .join("linear-meta.json")
+    });
+
+    let argv = vec![
+        "bash".to_string(),
+        "scripts/sync-intentions.sh".to_string(),
+        payload.display().to_string(),
+        meta_path.display().to_string(),
+    ];
+    let result = run_external_step("INTENTIONS-SYNC", "Sync intentions", &root, &argv, &[]);
+    if result.status != "ok" {
+        bail!(
+            "intentions sync failed: {}",
+            result.error.unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
+
+    crate::pout(
+        json,
+        json!({
+            "ok": true,
+            "payload": payload,
+            "meta_output": meta_path,
+        }),
+        &format!("Intentions synced. linkage: {}", meta_path.display()),
+    )
+}
+
+fn cmd_intentions_replay(
+    root: Option<PathBuf>,
+    report: &Path,
+    meta_output: Option<PathBuf>,
+    json: bool,
+) -> Result<()> {
+    let root = resolve_root(root)?;
+    let raw = fs::read_to_string(report)
+        .with_context(|| format!("failed to read report {}", report.display()))?;
+    let parsed: Value = serde_json::from_str(&raw)
+        .with_context(|| format!("invalid JSON report {}", report.display()))?;
+
+    let payload_path = parsed
+        .pointer("/intentions/sync_payload")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .ok_or_else(|| anyhow::anyhow!("report does not contain intentions.sync_payload"))?;
+
+    cmd_intentions_sync(Some(root), &payload_path, meta_output, json)
+}
+
+fn run_integration_severe_suite(root: &Path) -> Vec<ExecutionRecord> {
+    integration_scenarios()
+        .into_iter()
+        .map(|scenario| run_scenario(root, &scenario))
+        .collect()
+}
+
+fn integration_scenarios() -> Vec<ScenarioDefinition> {
+    vec![
+        ScenarioDefinition {
+            id: "TST-001",
+            title: "Smoke script integrity for full stack checks",
+            argv: vec!["bash".to_string(), "-n".to_string(), "scripts/smoke.sh".to_string()],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-002",
+            title: "Done transition blocked without canonical path",
+            argv: vec![
+                "cargo".to_string(),
+                "test".to_string(),
+                "-q".to_string(),
+                "--manifest-path".to_string(),
+                "code247.logline.world/Cargo.toml".to_string(),
+                "canonical_done_path_requires_ready_for_release".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-003",
+            title: "Webhook integrity signature validation",
+            argv: vec![
+                "cargo".to_string(),
+                "test".to_string(),
+                "-q".to_string(),
+                "--manifest-path".to_string(),
+                "code247.logline.world/Cargo.toml".to_string(),
+                "validates_linear_signature_hex".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-004",
+            title: "Gateway resilience baseline (compile gate)",
+            argv: vec![
+                "cargo".to_string(),
+                "check".to_string(),
+                "--manifest-path".to_string(),
+                "llm-gateway.logline.world/Cargo.toml".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-005",
+            title: "Red-main policy guard exists in runner path",
+            argv: vec![
+                "rg".to_string(),
+                "-n".to_string(),
+                "red-main|red_main".to_string(),
+                "code247.logline.world/src/test_runner_rs.rs".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-006",
+            title: "Flaky retry policy guard exists in runner path",
+            argv: vec![
+                "rg".to_string(),
+                "-n".to_string(),
+                "flaky|retry|rerun".to_string(),
+                "code247.logline.world/src/test_runner_rs.rs".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-007",
+            title: "Fuel baseline migration guard present",
+            argv: vec![
+                "rg".to_string(),
+                "-n".to_string(),
+                "fuel_window_baseline|baseline".to_string(),
+                "logic.logline.world/supabase/migrations/20260306000016_fuel_window_baseline.sql"
+                    .to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-008",
+            title: "Auth hardening regression gate (logline-auth tests)",
+            argv: vec![
+                "cargo".to_string(),
+                "test".to_string(),
+                "-q".to_string(),
+                "--manifest-path".to_string(),
+                "logic.logline.world/Cargo.toml".to_string(),
+                "-p".to_string(),
+                "logline-auth".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-009",
+            title: "Fuel reconciliation drift contracts present",
+            argv: vec![
+                "rg".to_string(),
+                "-n".to_string(),
+                "usd_settled|usd_estimated|drift".to_string(),
+                "logic.logline.world/supabase/migrations/20260305000012_fuel_l0_reconciler.sql"
+                    .to_string(),
+                "logic.logline.world/supabase/migrations/20260305000014_fuel_reconciler_rpc_security.sql"
+                    .to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-010",
+            title: "Webhook timestamp robustness under malformed payloads",
+            argv: vec![
+                "cargo".to_string(),
+                "test".to_string(),
+                "-q".to_string(),
+                "--manifest-path".to_string(),
+                "code247.logline.world/Cargo.toml".to_string(),
+                "extracts_webhook_timestamp_number_or_string".to_string(),
+            ],
+            env: vec![],
+        },
+    ]
+}
+
+fn run_scenario(root: &Path, scenario: &ScenarioDefinition) -> ExecutionRecord {
+    run_external_step(scenario.id, scenario.title, root, &scenario.argv, &scenario.env)
+}
+
+fn run_external_step(
+    id: &str,
+    title: &str,
+    root: &Path,
+    argv: &[String],
+    env: &[(&str, &str)],
+) -> ExecutionRecord {
+    let started = Instant::now();
+    let mut env_map = BTreeMap::new();
+    for (k, v) in env {
+        env_map.insert((*k).to_string(), (*v).to_string());
+    }
+    let command_record = CommandRecord {
+        argv: argv.to_vec(),
+        cwd: root.display().to_string(),
+        env: env_map.clone(),
+    };
+
+    if argv.is_empty() {
+        return ExecutionRecord {
+            id: id.to_string(),
+            title: title.to_string(),
+            applicable: false,
+            status: "skipped".to_string(),
+            elapsed_ms: 0,
+            command: Some(command_record),
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some("empty command".to_string()),
+            note: Some("no command provided".to_string()),
+        };
+    }
+
+    let mut command = Command::new(&argv[0]);
+    command.args(&argv[1..]).current_dir(root);
+    for (k, v) in env {
+        command.env(k, v);
+    }
+
+    match command.output() {
+        Ok(output) => {
+            let status_ok = output.status.success();
+            ExecutionRecord {
+                id: id.to_string(),
+                title: title.to_string(),
+                applicable: true,
+                status: if status_ok { "ok" } else { "failed" }.to_string(),
+                elapsed_ms: started.elapsed().as_millis(),
+                command: Some(command_record),
+                exit_code: output.status.code(),
+                stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                error: if status_ok {
+                    None
+                } else {
+                    Some("command exited with non-zero status".to_string())
+                },
+                note: None,
+            }
+        }
+        Err(err) => ExecutionRecord {
+            id: id.to_string(),
+            title: title.to_string(),
+            applicable: true,
+            status: "failed".to_string(),
+            elapsed_ms: started.elapsed().as_millis(),
+            command: Some(command_record),
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some(format!("failed to spawn command: {err}")),
+            note: None,
+        },
+    }
+}
+
+fn write_json_file(path: &Path, value: &impl Serialize) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    let serialized = serde_json::to_string_pretty(value)?;
+    fs::write(path, format!("{serialized}\n"))
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn resolve_root(root: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = root {
+        return canonical_root(path);
+    }
+
+    let cwd = std::env::current_dir().context("failed to resolve current directory")?;
+    for candidate in [cwd.clone(), cwd.join(".."), cwd.join("../..")] {
+        if candidate.join("TASKLIST-GERAL.md").exists() && candidate.join("scripts").exists() {
+            return canonical_root(candidate);
+        }
+    }
+
+    bail!("failed to resolve integration root. Pass --root <path>.");
+}
+
+fn canonical_root(root: PathBuf) -> Result<PathBuf> {
+    let canonical = root
+        .canonicalize()
+        .with_context(|| format!("failed to canonicalize {}", root.display()))?;
+    if !canonical.join("TASKLIST-GERAL.md").exists() {
+        bail!(
+            "invalid root {} (missing TASKLIST-GERAL.md)",
+            canonical.display()
+        );
+    }
+    Ok(canonical)
+}

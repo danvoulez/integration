@@ -1,0 +1,29 @@
+[package]
+name = "logline-supabase"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Unified Supabase client for LogLine ecosystem services"
+
+[lints]
+workspace = true
+
+[features]
+default = ["reqwest-rustls"]
+reqwest-rustls = ["reqwest/rustls-tls"]
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+tokio = { version = "1", features = ["rt"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+
+logline-auth = { path = "../logline-auth" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

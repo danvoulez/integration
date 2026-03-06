@@ -1,0 +1,51 @@
+{
+  "intentions": [
+    {
+      "id": "logic-agent-c-integration-severe",
+      "priority": "high",
+      "scope": "backend",
+      "tasks": [
+        {
+          "description": "LOGIC-001 consolidate CLI/runtime intentions+sync+replay",
+          "gate": "harness",
+          "owner": "agent-c"
+        },
+        {
+          "description": "LOGIC-002 contracts policy/gates consumable sem adapters ad-hoc",
+          "gate": "contracts",
+          "owner": "agent-c"
+        },
+        {
+          "description": "LOGIC-003 output estável para auditoria/replay",
+          "gate": "report",
+          "owner": "agent-c"
+        },
+        {
+          "description": "LOGIC-007 publish/sync linkage release flow",
+          "gate": "intentions",
+          "owner": "agent-c"
+        },
+        {
+          "description": "LOGIC-008 cookbook auto do catálogo canônico",
+          "gate": "catalog",
+          "owner": "agent-c"
+        },
+        {
+          "description": "LOGIC-009 hardening auth policy + schema updates",
+          "gate": "auth",
+          "owner": "agent-c"
+        },
+        {
+          "description": "LOGIC-010 sync Canon AST -> schema/TypeScript",
+          "gate": "schema",
+          "owner": "agent-c"
+        }
+      ],
+      "title": "Logic/CLI integration severe harness",
+      "type": "hardening"
+    }
+  ],
+  "project": "logic-cli",
+  "updated_at": "2026-03-06T10:55:30.212375+00:00",
+  "workspace": "logic.logline.world"
+}

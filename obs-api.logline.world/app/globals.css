@@ -1,0 +1,537 @@
+@import "tailwindcss";
+
+/* ── Premium System Aesthetic ── */
+:root {
+  --black: #0c0c0e;
+  --white: #ffffff;
+
+  /* Background with subtle warmth and depth */
+  --bg: #f2f1ef;
+  --bg-card: rgba(255, 255, 255, 0.65);
+
+  /* Borders - ultra thin and elegant */
+  --line: rgba(0, 0, 0, 0.08);
+  --line-bold: rgba(0, 0, 0, 0.85);
+  --line-light: rgba(255, 255, 255, 0.4);
+
+  /* Typography - High contrast */
+  --t1: #111112;
+  --t2: #5d5d63;
+  --t3: #96969e;
+
+  /* Observability Signals */
+  --green: #10b981;
+  /* Emerald */
+  --red: #f43f5e;
+  /* Rose */
+  --blue: #3b82f6;
+
+  /* Premium Shadows - Smooth and diffused */
+  --s0: none;
+  --s1: 0 2px 8px -2px rgba(0, 0, 0, 0.04), 0 4px 16px -4px rgba(0, 0, 0, 0.02);
+  --s2: 0 4px 12px -2px rgba(0, 0, 0, 0.06), 0 12px 32px -4px rgba(0, 0, 0, 0.04);
+  --s-glow: 0 0 20px rgba(16, 185, 129, 0.2);
+
+  /* Glassmorphism Blur */
+  --glass-blur: 16px;
+}
+
+/* Dark mode overrides (Assuming user system prefers dark or dynamic theme) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --black: #ffffff;
+    --white: #0c0c0e;
+    --bg: #0c0c0e;
+    --bg-card: rgba(255, 255, 255, 0.03);
+    --line: rgba(255, 255, 255, 0.08);
+    --line-bold: rgba(255, 255, 255, 0.8);
+    --line-light: rgba(255, 255, 255, 0.05);
+    /* Overlays */
+    --t1: #f3f4f6;
+    --t2: #9ca3af;
+    --t3: #6b7280;
+    --s1: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
+    --s2: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg);
+  color: var(--t1);
+  margin: 0;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Mesh Background / Noise overlay ── */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.03), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.03), transparent 25%);
+  pointer-events: none;
+}
+
+/* ── Elegant section label ── */
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t3);
+  opacity: 0.8;
+}
+
+/* ── Premium Glass Card ── */
+.card {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--line-light), var(--s1);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.card:hover {
+  box-shadow: inset 0 1px 0 var(--line-light), var(--s2);
+  border-color: rgba(0, 0, 0, 0.12);
+  /* Slightly harder line on hover (light mode) */
+}
+
+@media (prefers-color-scheme: dark) {
+  .card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* ── Premium Button ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--black);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  user-select: none;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: #1a1a1e;
+  /* slight lift */
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn:hover {
+    background: #e5e7eb;
+    box-shadow: 0 6px 16px rgba(255, 255, 255, 0.1);
+  }
+}
+
+.btn:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Signal Dots with Organic Pulse ── */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.4);
+}
+
+.dot-green {
+  background: var(--green);
+}
+
+.dot-red {
+  background: var(--red);
+}
+
+.dot-gray {
+  background: var(--t3);
+}
+
+.dot-live {
+  position: relative;
+  display: inline-flex;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.5);
+}
+
+.dot-live::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  animation: pulse-ring-organic 3s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes pulse-ring-organic {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+/* ── Refined Animations ── */
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fadeInBlur {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.page-enter {
+  animation: fadeInBlur 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.row-enter {
+  animation: slideUpFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.d-0 {
+  animation-delay: 50ms;
+}
+
+.d-1 {
+  animation-delay: 100ms;
+}
+
+.d-2 {
+  animation-delay: 150ms;
+}
+
+.d-3 {
+  animation-delay: 200ms;
+}
+
+.d-4 {
+  animation-delay: 250ms;
+}
+
+.d-5 {
+  animation-delay: 300ms;
+}
+
+.d-6 {
+  animation-delay: 350ms;
+}
+
+.d-7 {
+  animation-delay: 400ms;
+}
+
+/* ── Row interactions ── */
+.row {
+  display: flex !important;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  text-decoration: none;
+  color: var(--t1);
+  position: relative;
+  width: 100%;
+}
+
+.row:active {
+  background: rgba(0, 0, 0, 0.03);
+  transform: scale(0.99);
+}
+
+@media (prefers-color-scheme: dark) {
+  .row:active {
+    background: rgba(255, 255, 255, 0.02);
+  }
+}
+
+@media (hover: hover) {
+  .row:hover {
+    background: rgba(0, 0, 0, 0.02);
+    transform: translateX(2px);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .row:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+  }
+}
+
+/* ── Micro-interaction Press ── */
+.press {
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.34, 1.5, 0.64, 1);
+  user-select: none;
+}
+
+.press:active {
+  transform: scale(0.92);
+}
+
+.press:hover {
+  opacity: 0.8;
+}
+
+/* ── Floating Action Button (FAB) Premium ── */
+.fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  /* Squircle feeling */
+  background: var(--black);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.fab:hover {
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: #1a1a1e;
+}
+
+@media (prefers-color-scheme: dark) {
+  .fab:hover {
+    background: #e5e7eb;
+    box-shadow: 0 12px 40px rgba(255, 255, 255, 0.1);
+  }
+}
+
+.fab:active {
+  transform: scale(0.95);
+}
+
+.fab svg {
+  color: var(--white);
+}
+
+/* ── Glass TopBar specific utility ── */
+.glass-header {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .glass-header {
+    background: rgba(12, 12, 14, 0.65);
+  }
+}
+
+/* ── Custom Scrollbar ── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--t3);
+}
+
+/* ═══════════════════════════════════════
+   App Shell — Sidebar + Content Layout
+   ═══════════════════════════════════════ */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 280px;
+  height: 100vh;
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  transform: translateX(-100%);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-open {
+  transform: translateX(0);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.06);
+}
+
+/* Backdrop — only on mobile, no blur */
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.3);
+    transition: opacity 0.3s ease;
+  }
+}
+
+/* ── Main content ── */
+.main-content {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0;
+  transition: margin-left 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 768px) {
+  .main-content-shifted {
+    margin-left: 280px;
+  }
+}
+
+.content-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--line);
+}
+
+/* ═══════════════════════════════════════
+   Fuel Consumption Dashboard Utilities
+   ═══════════════════════════════════════ */
+
+.fuel-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.fuel-bar-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.fuel-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fuel-bar-fill.fuel-ok {
+  background: var(--green);
+}
+
+.fuel-bar-fill.fuel-warning {
+  background: #f59e0b;
+}
+
+.fuel-bar-fill.fuel-critical {
+  background: var(--red);
+}
+
+.metric-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: inset 0 1px 0 var(--line-light), var(--s1);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+}
+
+.metric-card:hover {
+  box-shadow: inset 0 1px 0 var(--line-light), var(--s2);
+  transform: translateY(-1px);
+}
+
+.trend-up {
+  color: var(--green);
+}
+
+.trend-down {
+  color: var(--red);
+}
+
+.trend-flat {
+  color: var(--t3);
+}

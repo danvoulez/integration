@@ -1,0 +1,3 @@
+setup:
+  project: logline-ecosystem
+  config: dev
