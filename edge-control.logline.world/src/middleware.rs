@@ -143,23 +143,41 @@ pub async fn idempotency_middleware(
             .into_response();
     };
 
-    if !state
+    match state
         .register_idempotency_key(&key, method.as_str(), &path)
         .await
     {
-        let request_id = request
-            .extensions()
-            .get::<RequestContext>()
-            .map(|ctx| ctx.request_id.clone());
-        return (
-            StatusCode::CONFLICT,
-            Json(ErrorResponseV1::new(
-                request_id,
-                "duplicate_request",
-                "Duplicate idempotency key",
-            )),
-        )
-            .into_response();
+        Ok(crate::IdempotencyDecision::Registered) => {}
+        Ok(crate::IdempotencyDecision::Duplicate) => {
+            let request_id = request
+                .extensions()
+                .get::<RequestContext>()
+                .map(|ctx| ctx.request_id.clone());
+            return (
+                StatusCode::CONFLICT,
+                Json(ErrorResponseV1::new(
+                    request_id,
+                    "duplicate_request",
+                    "Duplicate idempotency key",
+                )),
+            )
+                .into_response();
+        }
+        Err(err) => {
+            let request_id = request
+                .extensions()
+                .get::<RequestContext>()
+                .map(|ctx| ctx.request_id.clone());
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ErrorResponseV1::new(
+                    request_id,
+                    "idempotency_backend_unavailable",
+                    err.to_string(),
+                )),
+            )
+                .into_response();
+        }
     }
 
     let mut response = next.run(request).await;
@@ -179,16 +197,23 @@ pub async fn idempotency_middleware(
 
 pub struct RateBucket {
     pub hits: VecDeque<Instant>,
+    pub last_seen: Instant,
 }
 
 impl RateBucket {
-    pub fn new() -> Self {
+    pub fn new(now: Instant) -> Self {
         Self {
             hits: VecDeque::new(),
+            last_seen: now,
         }
     }
 
+    pub fn last_seen_at(&self) -> Instant {
+        self.last_seen
+    }
+
     pub fn consume(&mut self, now: Instant, window: Duration, max_requests: u32) -> bool {
+        self.last_seen = now;
         while let Some(ts) = self.hits.front() {
             if now.duration_since(*ts) > window {
                 let _ = self.hits.pop_front();

@@ -1,9 +1,10 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use jsonschema::{Draft, JSONSchema};
 use serde_json::Value;
@@ -41,6 +42,7 @@ fn main() -> Result<()> {
     validate_openapi(&root.join("code247.logline.world/openapi.yaml"))?;
     validate_openapi(&root.join("obs-api.logline.world/openapi.yaml"))?;
     validate_llm_gateway_output_contract(&root.join("llm-gateway.logline.world/openapi.yaml"))?;
+    validate_openapi_topology_alignment(&root)?;
 
     println!("contracts validation ok: {}", root.display());
     Ok(())
@@ -128,4 +130,110 @@ fn validate_llm_gateway_output_contract(path: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn validate_openapi_topology_alignment(root: &Path) -> Result<()> {
+    let topology_path = root.join("service_topology.json");
+    let topology_raw = fs::read_to_string(&topology_path)
+        .with_context(|| format!("failed to read {}", topology_path.display()))?;
+    let topology: serde_json::Value = serde_json::from_str(&topology_raw)
+        .with_context(|| format!("invalid JSON at {}", topology_path.display()))?;
+
+    let ingress = topology
+        .get("ingress")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| anyhow::anyhow!("missing ingress array in {}", topology_path.display()))?;
+
+    let mut host_to_local = HashMap::<String, String>::new();
+    for row in ingress {
+        let Some(hostname) = row.get("hostname").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let Some(service) = row.get("service").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if let Some(local_url) = normalize_topology_local_url(service) {
+            host_to_local.insert(hostname.to_string(), local_url);
+        }
+    }
+
+    let checks = [
+        (
+            "llm-gateway.logline.world/openapi.yaml",
+            "llm-gateway.logline.world",
+        ),
+        (
+            "contracts/openapi/edge-control.v1.openapi.yaml",
+            "edge-control.logline.world",
+        ),
+        (
+            "code247.logline.world/openapi.yaml",
+            "code247.logline.world",
+        ),
+        (
+            "obs-api.logline.world/openapi.yaml",
+            "obs-api.logline.world",
+        ),
+    ];
+
+    for (openapi_rel, host) in checks {
+        let openapi_path = root.join(openapi_rel);
+        let servers = openapi_server_urls(&openapi_path)?;
+        let expected_public = format!("https://{host}");
+        if !servers.iter().any(|url| url == &expected_public) {
+            bail!(
+                "openapi/topology drift: {} missing server url {}",
+                openapi_path.display(),
+                expected_public
+            );
+        }
+
+        let Some(expected_local) = host_to_local.get(host) else {
+            bail!(
+                "openapi/topology drift: missing topology ingress mapping for host '{}'",
+                host
+            );
+        };
+        if !servers.iter().any(|url| url == expected_local) {
+            bail!(
+                "openapi/topology drift: {} missing local server url {}",
+                openapi_path.display(),
+                expected_local
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn openapi_server_urls(path: &Path) -> Result<Vec<String>> {
+    let raw =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let yaml: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .with_context(|| format!("invalid YAML at {}", path.display()))?;
+    let servers = yaml
+        .get("servers")
+        .and_then(serde_yaml::Value::as_sequence)
+        .ok_or_else(|| anyhow::anyhow!("missing servers array in {}", path.display()))?;
+    let urls = servers
+        .iter()
+        .filter_map(|entry| entry.get("url"))
+        .filter_map(serde_yaml::Value::as_str)
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if urls.is_empty() {
+        bail!("missing servers[].url entries in {}", path.display());
+    }
+    Ok(urls)
+}
+
+fn normalize_topology_local_url(service: &str) -> Option<String> {
+    let trimmed = service.trim();
+    if let Some(port) = trimmed.strip_prefix("http://127.0.0.1:") {
+        return Some(format!("http://localhost:{port}"));
+    }
+    if let Some(port) = trimmed.strip_prefix("http://localhost:") {
+        return Some(format!("http://localhost:{port}"));
+    }
+    None
 }

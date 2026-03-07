@@ -27,8 +27,12 @@ pub struct Config {
     pub internal_api_token: Option<String>,
     pub rate_limit_window_seconds: u64,
     pub rate_limit_max_requests: u32,
+    pub rate_bucket_ttl_seconds: u64,
+    pub rate_bucket_max_keys: usize,
     pub idempotency_ttl_seconds: u64,
     pub idempotency_backend: IdempotencyBackend,
+    pub jwks_cache_ttl_seconds: u64,
+    pub jwks_fetch_timeout_ms: u64,
     pub state_db_path: String,
     pub resilience_max_retries: u32,
     pub resilience_initial_backoff_ms: u64,
@@ -53,6 +57,14 @@ impl Config {
             .unwrap_or_else(|_| "120".into())
             .parse::<u32>()
             .context("EDGE_CONTROL_RATE_LIMIT_MAX_REQUESTS must be a valid u32")?;
+        let rate_bucket_ttl_seconds = std::env::var("EDGE_CONTROL_RATE_BUCKET_TTL_SECONDS")
+            .unwrap_or_else(|_| "300".into())
+            .parse::<u64>()
+            .context("EDGE_CONTROL_RATE_BUCKET_TTL_SECONDS must be a valid u64")?;
+        let rate_bucket_max_keys = std::env::var("EDGE_CONTROL_RATE_BUCKET_MAX_KEYS")
+            .unwrap_or_else(|_| "5000".into())
+            .parse::<usize>()
+            .context("EDGE_CONTROL_RATE_BUCKET_MAX_KEYS must be a valid usize")?;
 
         let idempotency_ttl_seconds = std::env::var("EDGE_CONTROL_IDEMPOTENCY_TTL_SECONDS")
             .unwrap_or_else(|_| "900".into())
@@ -99,6 +111,14 @@ impl Config {
                 )
             })
         });
+        let jwks_cache_ttl_seconds = std::env::var("EDGE_CONTROL_JWKS_CACHE_TTL_SECONDS")
+            .unwrap_or_else(|_| "300".into())
+            .parse::<u64>()
+            .context("EDGE_CONTROL_JWKS_CACHE_TTL_SECONDS must be a valid u64")?;
+        let jwks_fetch_timeout_ms = std::env::var("EDGE_CONTROL_JWKS_FETCH_TIMEOUT_MS")
+            .unwrap_or_else(|_| "2000".into())
+            .parse::<u64>()
+            .context("EDGE_CONTROL_JWKS_FETCH_TIMEOUT_MS must be a valid u64")?;
 
         Ok(Self {
             host,
@@ -121,8 +141,12 @@ impl Config {
             internal_api_token: std::env::var("EDGE_CONTROL_INTERNAL_API_TOKEN").ok(),
             rate_limit_window_seconds,
             rate_limit_max_requests,
+            rate_bucket_ttl_seconds,
+            rate_bucket_max_keys,
             idempotency_ttl_seconds,
             idempotency_backend,
+            jwks_cache_ttl_seconds,
+            jwks_fetch_timeout_ms,
             state_db_path: std::env::var("EDGE_CONTROL_STATE_DB_PATH")
                 .unwrap_or_else(|_| "edge-control.db".into()),
             resilience_max_retries,

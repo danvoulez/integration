@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use logline_api::{Intent, RuntimeEngine};
 use logline_core::{
     default_config_dir, demo_catalog, load_catalog_from_dir, write_default_config_files,
@@ -19,6 +19,7 @@ use crate::commands::cicd;
 use crate::commands::db;
 use crate::commands::deploy;
 use crate::commands::dev;
+use crate::commands::harness;
 use crate::commands::secrets;
 use crate::supabase::{
     SupabaseClient, SupabaseConfig, StoredAuth,
@@ -64,6 +65,11 @@ enum Commands {
     Backend {
         #[command(subcommand)]
         command: BackendCommands,
+    },
+    /// CLI command catalog
+    Catalog {
+        #[command(subcommand)]
+        command: CatalogCommands,
     },
     /// Authentication
     Auth {
@@ -120,6 +126,11 @@ enum Commands {
         #[command(subcommand)]
         command: cicd::CicdCommands,
     },
+    /// Severe integration harness (contracts + scenarios + auditable report)
+    Harness {
+        #[command(subcommand)]
+        command: harness::HarnessCommands,
+    },
     /// Object storage (Supabase Storage)
     Storage {
         #[command(subcommand)]
@@ -157,6 +168,16 @@ enum ProfileCommands {
 enum BackendCommands {
     List,
     Test { backend_id: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum CatalogCommands {
+    /// Export CLI command catalog as JSON
+    Export {
+        /// Optional output path; prints to stdout when omitted
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -488,6 +509,11 @@ fn main() -> anyhow::Result<()> {
                 pout(cli.json, serde_json::json!({"ok":true,"backend_id":backend_id}), "Backend health check passed")?;
             }
         },
+        Commands::Catalog { command } => match command {
+            CatalogCommands::Export { output } => {
+                cmd_catalog_export(output.as_ref(), cli.json)?;
+            }
+        },
 
         // ─── Auth ───────────────────────────────────────────────────────
         Commands::Auth { command } => {
@@ -641,6 +667,9 @@ fn main() -> anyhow::Result<()> {
         Commands::Cicd { command } => {
             return cicd::cmd_cicd(command, cli.json);
         }
+        Commands::Harness { command } => {
+            return harness::cmd_harness(command, cli.json);
+        }
 
         // ─── Storage ────────────────────────────────────────────────────
         Commands::Storage { command } => {
@@ -728,6 +757,72 @@ fn main() -> anyhow::Result<()> {
 // ═══════════════════════════════════════════════════════════════════════════
 // Command implementations
 // ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_catalog_export(output: Option<&PathBuf>, json: bool) -> anyhow::Result<()> {
+    let catalog = build_cli_catalog_json();
+    let serialized = serde_json::to_string_pretty(&catalog)?;
+
+    if let Some(path) = output {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, format!("{serialized}\n"))?;
+        pout(
+            json,
+            serde_json::json!({"ok": true, "output": path, "catalog_version": "logline-cli.catalog.v1"}),
+            &format!("Catalog exported to {}", path.display()),
+        )?;
+        return Ok(());
+    }
+
+    println!("{serialized}");
+    Ok(())
+}
+
+fn build_cli_catalog_json() -> serde_json::Value {
+    let command = Cli::command();
+    serde_json::json!({
+        "binary": "logline",
+        "catalog_version": "logline-cli.catalog.v1",
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "commands": collect_cli_command_entries("logline".to_string(), &command),
+    })
+}
+
+fn collect_cli_command_entries(path: String, command: &clap::Command) -> Vec<serde_json::Value> {
+    let base_path = path.clone();
+    let args = command
+        .get_arguments()
+        .map(|arg| {
+            serde_json::json!({
+                "id": arg.get_id().to_string(),
+                "long": arg.get_long().map(ToString::to_string),
+                "short": arg.get_short().map(|v| v.to_string()),
+                "required": arg.is_required_set(),
+                "help": arg.get_help().map(ToString::to_string),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let subcommand_names = command
+        .get_subcommands()
+        .map(|sub| format!("{} {}", base_path, sub.get_name()))
+        .collect::<Vec<_>>();
+
+    let mut entries = vec![serde_json::json!({
+        "path": path,
+        "about": command.get_about().map(ToString::to_string),
+        "args": args,
+        "subcommands": subcommand_names,
+    })];
+
+    for subcommand in command.get_subcommands() {
+        let child_path = format!("{} {}", base_path, subcommand.get_name());
+        entries.extend(collect_cli_command_entries(child_path, subcommand));
+    }
+
+    entries
+}
 
 fn cmd_login_email(client: &SupabaseClient, email: &str, json: bool) -> anyhow::Result<()> {
     let password = rpassword::prompt_password(format!("Password for {email}: "))?;
@@ -2308,4 +2403,3 @@ fn apply_supabase_env(cmd: &mut Command, _workdir: Option<&PathBuf>) {
     eprintln!("Warning: No SUPABASE_ACCESS_TOKEN found in keychain or env.");
     eprintln!("  Store it with: logline supabase store-token");
 }
-

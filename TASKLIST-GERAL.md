@@ -14,16 +14,16 @@
 
 ### 1.2 P0 - Hardening central (cross-app)
 - [ ] G-001: Fechar round-trip único `manifest.intentions -> Code247 -> Linear -> pipeline -> PR/merge -> deploy` com rastreabilidade fim-a-fim.
-- [ ] G-004: Padronizar auth service-to-service única (JWT + escopo de projeto) em todos os serviços centrais.
+- [x] G-004: Padronizar auth service-to-service única (JWT + escopo de projeto) em todos os serviços centrais.
 - [ ] G-007: Fechar enforcement completo de `Done` sem bypass em qualquer superfície de escrita de estado.
 - [ ] G-008: Padronizar guardrails de supply chain em todos os repositórios (workflows/deps/paths sensíveis).
 - [ ] G-015: Subir `edge-control.logline.world` como control-plane oficial no LAB 8GB em modo operacional estável.
 - [ ] G-030: Alinhar contratos OpenAPI com topologia canônica (remover drift de host/porta, ex.: `edge-control` localhost `8080` vs runtime `18080`).
 
 ### 1.3 P0 - edge-control produção distribuída
-- [ ] ECTRL-001: Evitar crescimento não limitado de `rate_buckets` (normalizar chave por identidade e adicionar eviction/TTL).
-- [ ] ECTRL-002: Diferenciar falha de backend de idempotência vs request duplicada (não retornar `409 duplicate_request` em erro de storage/RPC).
-- [ ] ECTRL-003: Introduzir cache de JWKS + timeout explícito no client HTTP para validação JWT (reduzir dependência de rede por request).
+- [x] ECTRL-001: Evitar crescimento não limitado de `rate_buckets` (normalizar chave por identidade e adicionar eviction/TTL).
+- [x] ECTRL-002: Diferenciar falha de backend de idempotência vs request duplicada (não retornar `409 duplicate_request` em erro de storage/RPC).
+- [x] ECTRL-003: Introduzir cache de JWKS + timeout explícito no client HTTP para validação JWT (reduzir dependência de rede por request).
 
 ### 1.4 P1 - Fuel econômico e homeostase (backend)
 Sem pendências abertas nesta frente.
@@ -36,12 +36,12 @@ Sem pendências abertas nesta frente.
 
 ### 1.7 P1 - Obs API (backend, sem UI nova)
 - [ ] OBS-001: Expor backend de round-trip por intenção (`intake`, `linear`, `ci`, `pr`, `merge`, `deploy`) para consumo futuro da UI.
-- [ ] OBS-002: Fechar alertas de `stuck job`, `stale intention` e `sync failure` com ack/resolution auditável.
-- [ ] OBS-003: Harden `cli/auth/challenge*` para não expor `session_token`/dados sensíveis sem auth e sanitizar payload de status.
-- [ ] OBS-004: Validar fluxo de aprovação de challenge (`pending`, `expires_at`, single-use, replay protection) antes de emitir sessão.
-- [ ] OBS-005: Exigir membership tenant/app em `/api/v1/apps/:appId/keys/user` (read/write) para bloquear escrita cross-tenant por usuário autenticado.
-- [ ] OBS-006: Revisar `POST /api/v1/auth/tenant/resolve` para evitar enumeração de tenant (auth obrigatória ou resposta minimizada/rate-limited).
-- [ ] OBS-007: Endurecer criação de challenge CLI (`expires_at` server-side com clamp + rate limit/abuse controls + cleanup de expirados).
+- [x] OBS-002: Fechar alertas de `stuck job`, `stale intention` e `sync failure` com ack/resolution auditável.
+- [x] OBS-003: Harden `cli/auth/challenge*` para não expor `session_token`/dados sensíveis sem auth e sanitizar payload de status.
+- [x] OBS-004: Validar fluxo de aprovação de challenge (`pending`, `expires_at`, single-use, replay protection) antes de emitir sessão.
+- [x] OBS-005: Exigir membership tenant/app em `/api/v1/apps/:appId/keys/user` (read/write) para bloquear escrita cross-tenant por usuário autenticado.
+- [x] OBS-006: Revisar `POST /api/v1/auth/tenant/resolve` para evitar enumeração de tenant (auth obrigatória ou resposta minimizada/rate-limited).
+- [x] OBS-007: Endurecer criação de challenge CLI (`expires_at` server-side com clamp + rate limit/abuse controls + cleanup de expirados).
 
 ### 1.8 P2 - Onboarding ecossistema (depois do core estável)
 - [ ] VVC-001: Publicar intentions + sync + linkage no fluxo padrão (`voulezvous-tv-codex`).
@@ -76,7 +76,7 @@ Sem pendências abertas nesta frente.
 - [ ] A-101: Fechar `C247-RDY-007` (merge queue `merge_group`) nos repositórios críticos.
 - [ ] A-102: Fechar `C247-RDY-008` + `G-008` (security scan obrigatório pré-merge substantial).
 - [ ] A-103: Fechar `G-007` (enforcement completo de `Done` sem bypass em qualquer escrita).
-- [ ] A-104: Entregar `ECTRL-001/002/003` (rate-limit bounded, idempotência com erro correto, JWKS cache+timeout).
+- [x] A-104: Entregar `ECTRL-001/002/003` (rate-limit bounded, idempotência com erro correto, JWKS cache+timeout).
 - [ ] A-105: Fechar `G-015` (edge-control oficial em modo operacional estável no LAB 8GB).
 
 **DoD Agent A:** runtime fail-closed, sem bypass de estado e sem superfícies críticas com comportamento ambíguo sob falha.
@@ -98,10 +98,10 @@ Sem pendências abertas nesta frente.
 **Escopo:** `obs-api.logline.world/app/api/*`, `obs-api.logline.world/lib/auth/*`, `llm-gateway.logline.world/*` (somente auth).  
 **Objetivo:** eliminar exposição de credenciais/sessões e garantir autorização consistente por tenant/app/scope.
 
-- [ ] B-101: Fechar `G-004` (auth service-to-service única com JWT + escopo de projeto).
-- [ ] B-102: Fechar `OBS-003/004/005` (challenge leakage/replay + membership enforcement em user keys).
-- [ ] B-103: Fechar `OBS-006/007` (tenant resolve sem enumeração indevida + creation controls no challenge).
-- [ ] B-104: Fechar `OBS-002` (alertas operacionais com ack/resolution auditável, sem buracos de auth).
+- [x] B-101: Fechar `G-004` (auth service-to-service única com JWT + escopo de projeto).
+- [x] B-102: Fechar `OBS-003/004/005` (challenge leakage/replay + membership enforcement em user keys).
+- [x] B-103: Fechar `OBS-006/007` (tenant resolve sem enumeração indevida + creation controls no challenge).
+- [x] B-104: Fechar `OBS-002` (alertas operacionais com ack/resolution auditável, sem buracos de auth).
 
 **DoD Agent B:** nenhuma rota crítica expõe sessão/dados sensíveis sem auth e toda escrita sensível exige contexto autorizado.
 
@@ -121,10 +121,15 @@ Sem pendências abertas nesta frente.
 **Objetivo:** garantir integração ponta-a-ponta com contratos coerentes e gate severo bloqueando regressão.
 
 - [ ] C-101: Fechar `G-001` (round-trip único rastreável fim-a-fim).
-- [ ] C-102: Fechar `G-030` (OpenAPI/topologia sem drift de host/porta).
-- [ ] C-103: Fechar `TST-011/012/013` (multi-instance edge-control + caos Linear/GitHub + isolamento policy_version).
-- [ ] C-104: Fechar `TST-014/015` + `TST-GATE-004` (security regressions viram gate obrigatório).
-- [ ] C-105: Fechar `LOGIC-013` (relatório operacional consolidado com round-trip por intenção).
+- [x] C-102: Fechar `G-030` (OpenAPI/topologia sem drift de host/porta).
+- [x] C-103: Fechar `TST-011/012/013` (multi-instance edge-control + caos Linear/GitHub + isolamento policy_version).
+- [x] C-104: Fechar `TST-014/015` + `TST-GATE-004` (security regressions viram gate obrigatório).
+- [x] C-105: Fechar `LOGIC-013` (relatório operacional consolidado com round-trip por intenção).
+
+Pendência objetiva para `C-101` (ação exata):
+1. Rodar `logline-cli harness intentions publish --root <integration-root> --ci-target code247-ci/main`.
+2. Rodar `logline-cli harness intentions sync --root <integration-root> --payload <sync-payload.json>`.
+3. Confirmar em `artifacts/operations-verify-report.json` que `summary.round_trip.linked_total` e `summary.round_trip.synced_total` cobrem todas as intenções do manifesto.
 
 **DoD Agent C:** um comando executa/verifica o ciclo crítico e bloqueia merge quando contratos/gates essenciais falham.
 
@@ -145,20 +150,20 @@ Sem pendências abertas nesta frente.
 ## 3) Testes Severos de Integração (pendências novas)
 
 ### 3.1 Novos cenários obrigatórios
-- [ ] TST-011: validar `edge-control` com JWKS real + idempotência persistente em cenário restart/multi-instance.
-- [ ] TST-012: falha/intermitência de Linear/GitHub preserva timeline, fila assíncrona e sinais operacionais do Code247.
-- [ ] TST-013: `policy_version` segmentada por tenant/app não mistura cálculo de Fuel entre tenants.
-- [ ] TST-014: validar security regressions do `obs-api` (`cli challenge` sem leakage/replay e `user keys` com membership enforcement estrito).
-- [ ] TST-015: validar que `tenant/resolve` não permite enumeração indevida e que criação de challenge aplica TTL/rate-limit server-side.
+- [x] TST-011: validar `edge-control` com JWKS real + idempotência persistente em cenário restart/multi-instance.
+- [x] TST-012: falha/intermitência de Linear/GitHub preserva timeline, fila assíncrona e sinais operacionais do Code247.
+- [x] TST-013: `policy_version` segmentada por tenant/app não mistura cálculo de Fuel entre tenants.
+- [x] TST-014: validar security regressions do `obs-api` (`cli challenge` sem leakage/replay e `user keys` com membership enforcement estrito).
+- [x] TST-015: validar que `tenant/resolve` não permite enumeração indevida e que criação de challenge aplica TTL/rate-limit server-side.
 
 ### 3.2 Gate incremental
-- [ ] TST-GATE-004: qualquer mudança em `Code247 timeline`, `edge-control auth/idempotency` ou `Fuel policy_version` deve adicionar teste severo correspondente.
+- [x] TST-GATE-004: qualquer mudança em `Code247 timeline`, `edge-control auth/idempotency` ou `Fuel policy_version` deve adicionar teste severo correspondente.
 
 Status atual (2026-03-06): `./scripts/integration-severe.sh` segue verde no baseline atual e novos cenários acima passam a ser obrigatórios para o próximo ciclo.
 
 ## 4) Definition of Done (ciclo atual)
 - [ ] DOD-001: Code247 apto a receber tasks contínuas sem intervenção manual fora dos checkpoints definidos.
-- [ ] DOD-002: auth service-to-service unificada em todos os serviços centrais.
+- [x] DOD-002: auth service-to-service unificada em todos os serviços centrais.
 - [ ] DOD-004: suíte severa de integração rodando em CI e bloqueando regressão.
 - [ ] DOD-005: UI inicia apenas após backend contracts/gates/testes estarem estáveis.
 
@@ -207,6 +212,8 @@ Status atual (2026-03-06): `./scripts/integration-severe.sh` segue verde no base
 - [x] JWT via JWKS real, contract tests dos handlers críticos e resilience layer downstream habilitados.
 - [x] Idempotência persistida em backend compartilhado via Supabase RPC, com fallback SQLite apenas para dev/teste local.
 - [x] Orquestração `edge-control -> Code247` migrou do bearer estático para JWT service-to-service curto com `scope` + `code247_projects`, mantendo `CODE247_INTENTIONS_TOKEN` apenas como fallback legado.
+- [x] `rate_buckets` agora com limite e eviction (`TTL + max_keys`) e middleware de idempotência diferencia duplicata (`409`) de indisponibilidade do backend (`503`).
+- [x] Validação JWT usa cache de JWKS em memória com expiração e timeout explícito de fetch.
 
 ### LLM Gateway
 - [x] Redução adicional de latência local com alvo operacional por modo.

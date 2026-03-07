@@ -1,13 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::Subcommand;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 #[derive(Debug, Subcommand)]
@@ -129,6 +129,7 @@ struct HarnessReport {
     artifacts: HarnessArtifacts,
     steps: Vec<ExecutionRecord>,
     scenarios: Vec<ExecutionRecord>,
+    round_trip: Value,
     summary: Value,
 }
 
@@ -155,6 +156,14 @@ struct ScenarioDefinition {
     title: &'static str,
     argv: Vec<String>,
     env: Vec<(&'static str, &'static str)>,
+}
+
+#[derive(Debug, Default)]
+struct JsonLoadResult {
+    exists: bool,
+    parse_ok: bool,
+    value: Option<Value>,
+    error: Option<String>,
 }
 
 pub fn cmd_harness(command: HarnessCommands, json: bool) -> Result<()> {
@@ -224,6 +233,7 @@ fn cmd_harness_run(root: Option<PathBuf>, report: Option<PathBuf>, json: bool) -
     ));
 
     let scenarios = run_integration_severe_suite(&root);
+    let round_trip = collect_round_trip_snapshot(&root);
 
     let step_failures = steps.iter().filter(|item| item.status == "failed").count();
     let scenario_failures = scenarios
@@ -244,11 +254,18 @@ fn cmd_harness_run(root: Option<PathBuf>, report: Option<PathBuf>, json: bool) -
         artifacts: collect_harness_artifacts(&root, &report_path, &markdown_path),
         steps,
         scenarios,
+        round_trip: round_trip.clone(),
         summary: json!({
             "ok": step_failures == 0 && scenario_failures == 0,
             "step_failures": step_failures,
             "scenario_failures": scenario_failures,
             "scenario_skipped": scenario_skipped,
+            "round_trip": {
+                "intentions_total": round_trip["intentions_total"].as_u64().unwrap_or(0),
+                "linked_total": round_trip["linked_total"].as_u64().unwrap_or(0),
+                "synced_total": round_trip["synced_total"].as_u64().unwrap_or(0),
+                "sync_errors_total": round_trip["sync_errors_total"].as_u64().unwrap_or(0),
+            }
         }),
     };
 
@@ -720,6 +737,72 @@ fn integration_scenarios() -> Vec<ScenarioDefinition> {
             ],
             env: vec![],
         },
+        ScenarioDefinition {
+            id: "TST-011",
+            title: "Edge-control JWKS path + idempotency persistence (restart/multi-instance)",
+            argv: vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "cargo test -q --manifest-path edge-control.logline.world/Cargo.toml draft_intention_returns_contract_and_rejects_duplicate_idempotency && cargo test -q --manifest-path edge-control.logline.world/Cargo.toml supabase_store_uses_shared_rpc_contract && rg -n \"decode_supabase_jwks|supabase_jwks_url\" edge-control.logline.world/src/auth.rs edge-control.logline.world/src/config.rs".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-012",
+            title: "Code247 resilience under Linear/GitHub intermitência preserves queue/timeline",
+            argv: vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "cargo test -q --manifest-path code247.logline.world/Cargo.toml retries_transient_http_failures && cargo test -q --manifest-path code247.logline.world/Cargo.toml claim_next_pending_with_lease_is_atomic_across_instances && cargo test -q --manifest-path code247.logline.world/Cargo.toml sync_http_moves_in_progress_to_ready_for_release".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-013",
+            title: "Fuel policy_version segmented by tenant/app without cross-tenant mixing",
+            argv: vec![
+                "rg".to_string(),
+                "-n".to_string(),
+                "tenant_id|app_id|policy_version".to_string(),
+                "logic.logline.world/supabase/migrations/20260306000019_fuel_policy_alerts_ops.sql"
+                    .to_string(),
+                "logic.logline.world/supabase/migrations/20260307000022_fix_fuel_ops_materialize.sql"
+                    .to_string(),
+                "logic.logline.world/supabase/migrations/20260307000023_fix_fuel_ops_materialize_aliases.sql"
+                    .to_string(),
+                "obs-api.logline.world/lib/obs/fuel.ts".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-014",
+            title: "OBS API security regression guard (challenge leakage/replay + user keys membership)",
+            argv: vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "rg -n \"requireAccess\\(req, 'read'\\)|requireJwtSubject|hasAppMembership\\(|tenant_id mismatch|app scope mismatch|User is not a member of this tenant/app\" 'obs-api.logline.world/app/api/v1/apps/[appId]/keys/user/route.ts' && rg -n \"status: 'pending'|expires_at|approved_at|session_token|cleanupExpiredCliChallenges|sanitizeCliChallenge\" 'obs-api.logline.world/app/api/v1/cli/auth/challenge/[challengeId]/approve/route.ts'".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-015",
+            title: "tenant/resolve anti-enumeration + challenge TTL/rate-limit server-side",
+            argv: vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "rg -n \"requireJwtSubject|getUserFromAuthHeader|tenantMemberships|Tenant not found\" 'obs-api.logline.world/app/api/v1/auth/tenant/resolve/route.ts' && rg -n \"CHALLENGE_TTL_SECONDS|RATE_LIMIT_WINDOW_SECONDS|RATE_LIMIT_MAX_REQUESTS|too_many_requests|resolveChallengeExpiry|enforceChallengeCreateRateLimit|cleanupExpiredCliChallenges|RATE_LIMITED\" 'obs-api.logline.world/app/api/v1/cli/auth/challenge/route.ts' 'obs-api.logline.world/lib/auth/cli-challenge.ts'".to_string(),
+            ],
+            env: vec![],
+        },
+        ScenarioDefinition {
+            id: "TST-GATE-004",
+            title: "Gate: sensitive integration deltas require severe suite update",
+            argv: vec![
+                "bash".to_string(),
+                "scripts/enforce-severe-gate.sh".to_string(),
+            ],
+            env: vec![],
+        },
     ]
 }
 
@@ -959,6 +1042,42 @@ fn render_markdown_summary(report: &HarnessReport) -> String {
         ));
     }
 
+    sections.push(String::new());
+    sections.push("## Round-Trip by Intention".to_string());
+    sections.push(format!(
+        "- intentions_total: `{}`",
+        report.round_trip["intentions_total"].as_u64().unwrap_or(0)
+    ));
+    sections.push(format!(
+        "- linked_total: `{}`",
+        report.round_trip["linked_total"].as_u64().unwrap_or(0)
+    ));
+    sections.push(format!(
+        "- synced_total: `{}`",
+        report.round_trip["synced_total"].as_u64().unwrap_or(0)
+    ));
+    sections.push(format!(
+        "- sync_errors_total: `{}`",
+        report.round_trip["sync_errors_total"].as_u64().unwrap_or(0)
+    ));
+    if let Some(intentions) = report
+        .round_trip
+        .get("intentions")
+        .and_then(serde_json::Value::as_array)
+    {
+        for row in intentions {
+            let id = row
+                .get("intention_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            let status = row
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            sections.push(format!("- `{id}` -> `{status}`"));
+        }
+    }
+
     let failed_steps: Vec<&ExecutionRecord> = report
         .steps
         .iter()
@@ -1015,4 +1134,146 @@ fn canonical_root(root: PathBuf) -> Result<PathBuf> {
         );
     }
     Ok(canonical)
+}
+
+fn collect_round_trip_snapshot(root: &Path) -> Value {
+    let manifest_path = root
+        .join("logic.logline.world")
+        .join(".code247")
+        .join("manifest.intentions.json");
+    let code247_meta_path = root
+        .join("code247.logline.world")
+        .join(".code247")
+        .join("linear-meta.json");
+    let logic_meta_path = root
+        .join("logic.logline.world")
+        .join(".code247")
+        .join("linear-meta.json");
+
+    let manifest = load_json_file(&manifest_path);
+    let code247_meta = load_json_file(&code247_meta_path);
+    let logic_meta = load_json_file(&logic_meta_path);
+
+    let manifest_ids = manifest
+        .value
+        .as_ref()
+        .map(|value| collect_ids(value, "/intentions", "id"))
+        .unwrap_or_default();
+    let linear_ids = merge_ids(&[
+        (&code247_meta, "/linear/intentions", "id"),
+        (&logic_meta, "/linear/intentions", "id"),
+    ]);
+    let synced_ids = merge_ids(&[
+        (&code247_meta, "/sync/synced", "intention_id"),
+        (&logic_meta, "/sync/synced", "intention_id"),
+    ]);
+    let sync_error_ids = merge_ids(&[
+        (&code247_meta, "/sync/errors", "intention_id"),
+        (&logic_meta, "/sync/errors", "intention_id"),
+    ]);
+
+    let intentions = manifest_ids
+        .iter()
+        .map(|id| {
+            let linked = linear_ids.contains(id);
+            let synced = synced_ids.contains(id);
+            let sync_error = sync_error_ids.contains(id);
+            let status = if synced {
+                "complete"
+            } else if sync_error {
+                "sync_error"
+            } else if linked {
+                "linked"
+            } else {
+                "manifest_only"
+            };
+            json!({
+                "intention_id": id,
+                "linked_to_linear": linked,
+                "sync_success": synced,
+                "sync_error": sync_error,
+                "status": status,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "manifest": json_load_snapshot(&manifest_path, &manifest),
+        "code247_linear_meta": json_load_snapshot(&code247_meta_path, &code247_meta),
+        "logic_linear_meta": json_load_snapshot(&logic_meta_path, &logic_meta),
+        "intentions_total": manifest_ids.len(),
+        "linked_total": manifest_ids.iter().filter(|id| linear_ids.contains(*id)).count(),
+        "synced_total": manifest_ids.iter().filter(|id| synced_ids.contains(*id)).count(),
+        "sync_errors_total": manifest_ids.iter().filter(|id| sync_error_ids.contains(*id)).count(),
+        "intentions": intentions,
+    })
+}
+
+fn merge_ids(sources: &[(&JsonLoadResult, &str, &str)]) -> BTreeSet<String> {
+    let mut merged = BTreeSet::new();
+    for (source, pointer, field) in sources {
+        if let Some(value) = source.value.as_ref() {
+            for id in collect_ids(value, pointer, field) {
+                merged.insert(id);
+            }
+        }
+    }
+    merged
+}
+
+fn collect_ids(value: &Value, pointer: &str, field: &str) -> BTreeSet<String> {
+    value
+        .pointer(pointer)
+        .and_then(serde_json::Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row.get(field))
+                .filter_map(serde_json::Value::as_str)
+                .map(ToString::to_string)
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn load_json_file(path: &Path) -> JsonLoadResult {
+    if !path.exists() {
+        return JsonLoadResult {
+            exists: false,
+            parse_ok: false,
+            value: None,
+            error: None,
+        };
+    }
+
+    match fs::read_to_string(path) {
+        Ok(raw) => match serde_json::from_str::<Value>(&raw) {
+            Ok(value) => JsonLoadResult {
+                exists: true,
+                parse_ok: true,
+                value: Some(value),
+                error: None,
+            },
+            Err(err) => JsonLoadResult {
+                exists: true,
+                parse_ok: false,
+                value: None,
+                error: Some(err.to_string()),
+            },
+        },
+        Err(err) => JsonLoadResult {
+            exists: true,
+            parse_ok: false,
+            value: None,
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+fn json_load_snapshot(path: &Path, load: &JsonLoadResult) -> Value {
+    json!({
+        "path": path.display().to_string(),
+        "exists": load.exists,
+        "parse_ok": load.parse_ok,
+        "error": load.error,
+    })
 }

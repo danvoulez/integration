@@ -1,25 +1,25 @@
 {
   "catalog_version": "logline.capability-catalog.v1",
-  "generated_at": "2026-03-06T13:22:04.786Z",
+  "generated_at": "2026-03-07T19:33:20.502Z",
   "generated_by": "scripts/generate-capability-catalog.mjs",
   "summary": {
     "total_capabilities": 131,
-    "cli_capabilities": 80,
-    "api_capabilities": 51,
+    "cli_capabilities": 78,
+    "api_capabilities": 53,
     "by_service": {
       "code247": 10,
       "edge-control": 7,
       "inference-plane": 5,
       "llm-gateway": 10,
-      "obs-api": 19,
-      "logic-cli": 80
+      "obs-api": 21,
+      "logic-cli": 78
     }
   },
   "sources": {
     "cli": {
       "binary": "logline",
       "catalog_version": "logline-cli.catalog.v1",
-      "command_entries": 100
+      "command_entries": 98
     },
     "apis": [
       {
@@ -32,7 +32,7 @@
           "http://localhost:3001"
         ],
         "visibility": "public",
-        "endpoint_count": 19
+        "endpoint_count": 21
       },
       {
         "service_id": "code247",
@@ -52,7 +52,8 @@
         "title": "LLM Gateway API",
         "version": "0.3.0",
         "servers": [
-          "http://localhost:3000"
+          "https://llm-gateway.logline.world",
+          "http://localhost:7700"
         ],
         "visibility": "public",
         "endpoint_count": 10
@@ -64,7 +65,7 @@
         "version": "1.0.0",
         "servers": [
           "https://edge-control.logline.world",
-          "http://localhost:8080"
+          "http://localhost:18080"
         ],
         "visibility": "public",
         "endpoint_count": 7
@@ -549,6 +550,32 @@
       "summary": "Get canonic capability catalog for CLI + APIs",
       "tags": [
         "Capabilities"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.code247.run-timeline",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/code247/run-timeline",
+      "summary": "Get Code247 operational run timeline",
+      "tags": [
+        "Code247"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.code247.stage-telemetry",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/code247/stage-telemetry",
+      "summary": "Get Code247 stage latency and cost telemetry",
+      "tags": [
+        "Code247"
       ],
       "source_file": "obs-api.logline.world/openapi.yaml"
     },
@@ -1085,7 +1112,7 @@
           "long": "output",
           "short": null,
           "required": false,
-          "help": "Optional output path (stdout when omitted)"
+          "help": "Optional output path; prints to stdout when omitted"
         }
       ]
     },
@@ -1472,66 +1499,6 @@
           "short": null,
           "required": false,
           "help": "Max results"
-        }
-      ]
-    },
-    {
-      "capability_id": "cli.logline.fuel.reconcile",
-      "surface": "cli",
-      "service_id": "logic-cli",
-      "command": "logline fuel reconcile",
-      "summary": "Run valuation reconciliation (L0 backfill window)",
-      "args": [
-        {
-          "id": "from",
-          "long": "from",
-          "short": null,
-          "required": false,
-          "help": "Window start (ISO-8601). Default: now - 24h"
-        },
-        {
-          "id": "to",
-          "long": "to",
-          "short": null,
-          "required": false,
-          "help": "Window end (ISO-8601). Default: now"
-        },
-        {
-          "id": "price_card_version",
-          "long": "price-card-version",
-          "short": null,
-          "required": false,
-          "help": "Price card version override"
-        }
-      ]
-    },
-    {
-      "capability_id": "cli.logline.fuel.reconciliation-status",
-      "surface": "cli",
-      "service_id": "logic-cli",
-      "command": "logline fuel reconciliation-status",
-      "summary": "Show valuation drift and precision coverage for recent days",
-      "args": [
-        {
-          "id": "days",
-          "long": "days",
-          "short": null,
-          "required": false,
-          "help": "Number of days to inspect"
-        },
-        {
-          "id": "app_id",
-          "long": "app-id",
-          "short": null,
-          "required": false,
-          "help": "Filter by app"
-        },
-        {
-          "id": "source",
-          "long": "source",
-          "short": null,
-          "required": false,
-          "help": "Filter by source"
         }
       ]
     },

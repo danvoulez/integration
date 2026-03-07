@@ -25,7 +25,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
-  const actor = parsed.data.actor ?? auth.claims.sub;
+  const actor = auth.claims.sub;
   const result = await ackObsAlert({
     alert_id: parsed.data.alert_id,
     reason: parsed.data.reason,

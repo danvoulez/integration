@@ -677,9 +677,19 @@ export async function getObsOpenAlerts(query: AlertsOpenQuery) {
     .where(sql`${obsAlerts.status} in ('open', 'acked') and coalesce(${obsAlerts.source}, '') <> 'fuel'`);
   for (const alert of unresolved) {
     if (derivedById.has(alert.alert_id)) continue;
+    const previousDetails = (alert.details && typeof alert.details === 'object')
+      ? alert.details as Record<string, unknown>
+      : {};
     await db.update(obsAlerts).set({
       status: 'resolved',
       resolved_at: now,
+      details: {
+        ...previousDetails,
+        resolution: {
+          type: 'auto_clear',
+          at: now.toISOString(),
+        },
+      },
       updated_at: now,
     }).where(eq(obsAlerts.alert_id, alert.alert_id));
   }
@@ -727,11 +737,22 @@ export async function ackObsAlert(input: AlertAckInput): Promise<AckObsAlertResu
 
   const now = new Date();
   const ackedBy = input.actor?.trim() || 'unknown';
+  const currentDetails = (current.details && typeof current.details === 'object')
+    ? current.details as Record<string, unknown>
+    : {};
   await db.update(obsAlerts).set({
     status: 'acked',
     acked_at: now,
     acked_by: ackedBy,
     ack_reason: input.reason,
+    details: {
+      ...currentDetails,
+      ack: {
+        actor: ackedBy,
+        reason: input.reason,
+        at: now.toISOString(),
+      },
+    },
     updated_at: now,
   }).where(eq(obsAlerts.alert_id, input.alert_id));
 

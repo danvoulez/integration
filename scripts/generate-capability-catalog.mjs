@@ -131,6 +131,14 @@ async function loadCliCatalog() {
     );
 
     if (result.status !== 0) {
+      const combinedOutput = `${result.stderr || ''}\n${result.stdout || ''}`;
+      if (combinedOutput.includes("unrecognized subcommand 'catalog'")) {
+        return {
+          binary: 'logline',
+          catalog_version: 'logline-cli.catalog.v0',
+          commands: [],
+        };
+      }
       throw new Error(`failed to export CLI catalog: ${result.stderr || result.stdout || 'unknown error'}`);
     }
 

@@ -19,6 +19,7 @@ APP_ID="${LLM_GATEWAY_SMOKE_APP_ID:-${DEFAULT_APP_ID:-code247}}"
 ONBOARD_APP_NAME="${LLM_GATEWAY_SMOKE_LEGACY_APP_NAME:-llm-gateway-smoke-legacy}"
 COMPAT_SUNSET_AT="${LLM_GATEWAY_SMOKE_COMPAT_SUNSET_AT:-2099-01-01T00:00:00Z}"
 REQUIRED_SCOPE="${LLM_GATEWAY_SMOKE_REQUIRED_SCOPE:-${SUPABASE_REQUIRED_SERVICE_SCOPE:-llm:invoke}}"
+STARTUP_WAIT_SECONDS="${LLM_GATEWAY_SMOKE_STARTUP_WAIT_SECONDS:-180}"
 
 mkdir -p "${ARTIFACTS_DIR}"
 rm -f "${DB_PATH}"
@@ -138,7 +139,7 @@ start_gateway() {
   ) >"${log_file}" 2>&1 &
   SERVER_PID="$!"
 
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "${STARTUP_WAIT_SECONDS}"); do
     if curl -fsS "${BASE_URL}/health" >/dev/null 2>&1; then
       cp "${log_file}" "${LOG_PATH}"
       return 0

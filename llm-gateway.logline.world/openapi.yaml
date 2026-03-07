@@ -5,7 +5,8 @@ info:
   description: |
     OpenAI-compatible gateway with local and premium model routing.
 servers:
-  - url: http://localhost:3000
+  - url: https://llm-gateway.logline.world
+  - url: http://localhost:7700
 paths:
   /health:
     get:

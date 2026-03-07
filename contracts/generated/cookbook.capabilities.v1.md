@@ -1,12 +1,12 @@
 # Cookbook Canônico (Gerado)
 
-Gerado em: `2026-03-06T15:04:23.199Z`
+Gerado em: `2026-03-07T19:38:40.557Z`
 Fonte: `contracts/generated/capability-catalog.v1.json`
 
 ## Resumo
 - Total de capacidades: **131**
-- CLI: **80**
-- API: **51**
+- CLI: **78**
+- API: **53**
 
 ## Capacidades CLI
 
@@ -54,8 +54,6 @@ Fonte: `contracts/generated/capability-catalog.v1.json`
 | `logline founder bootstrap` | One-time world bootstrap (creates tenant, user, memberships, founder cap) |
 | `logline fuel emit` | Emit a fuel event |
 | `logline fuel list` | List fuel events (optionally filtered) |
-| `logline fuel reconcile` | Run valuation reconciliation (L0 backfill window) |
-| `logline fuel reconciliation-status` | Show valuation drift and precision coverage for recent days |
 | `logline fuel summary` | Get fuel summary (totals by app/unit_type) |
 | `logline harness cookbook` | Generate cookbook from the canonical capability catalog |
 | `logline harness intentions generate` | Generate a canonical manifest.intentions.json for logic/CLI release flow |
@@ -155,6 +153,8 @@ Fonte: `contracts/generated/capability-catalog.v1.json`
 | `GET` | `/api/v1/apps/{appId}/keys/user` | List user-owned provider keys for app/tenant |
 | `GET` | `/api/v1/auth/whoami` | Resolve current user and memberships |
 | `GET` | `/api/v1/capabilities/catalog` | Get canonic capability catalog for CLI + APIs |
+| `GET` | `/api/v1/code247/run-timeline` | Get Code247 operational run timeline |
+| `GET` | `/api/v1/code247/stage-telemetry` | Get Code247 stage latency and cost telemetry |
 | `GET` | `/api/v1/dashboards/summary` | Get cross-app dashboard summary |
 | `GET` | `/api/v1/fuel/alerts` | Materialize and list open Fuel alerts |
 | `GET` | `/api/v1/fuel/calibration` | Get Fuel calibration analysis for k_latency, k_errors and k_energy |

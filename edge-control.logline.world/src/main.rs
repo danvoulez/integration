@@ -21,6 +21,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use jsonwebtoken::jwk::JwkSet;
 use tokio::sync::Mutex;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -39,7 +40,18 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     pub circuit_breakers: Arc<CircuitBreakers>,
     pub state_store: StateStore,
+    jwks_cache: Mutex<Option<CachedJwks>>,
     rate_buckets: Mutex<HashMap<String, RateBucket>>,
+}
+
+pub struct CachedJwks {
+    fetched_at: Instant,
+    set: JwkSet,
+}
+
+pub enum IdempotencyDecision {
+    Registered,
+    Duplicate,
 }
 
 impl AppState {
@@ -50,31 +62,73 @@ impl AppState {
             http_client: reqwest::Client::new(),
             circuit_breakers: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             state_store,
+            jwks_cache: Mutex::new(None),
             rate_buckets: Mutex::new(HashMap::new()),
         }
     }
 
     pub async fn consume_rate_slot(&self, key: &str) -> bool {
+        let now = Instant::now();
+        let ttl = Duration::from_secs(self.config.rate_bucket_ttl_seconds.max(5));
         let mut buckets = self.rate_buckets.lock().await;
+        buckets.retain(|_, bucket| now.duration_since(bucket.last_seen_at()) <= ttl);
+        if !buckets.contains_key(key) && buckets.len() >= self.config.rate_bucket_max_keys.max(1) {
+            let evict_key = buckets
+                .iter()
+                .min_by_key(|(_, bucket)| bucket.last_seen_at())
+                .map(|(bucket_key, _)| bucket_key.clone());
+            if let Some(evict_key) = evict_key {
+                buckets.remove(&evict_key);
+            }
+        }
         let entry = buckets
             .entry(key.to_string())
-            .or_insert_with(RateBucket::new);
+            .or_insert_with(|| RateBucket::new(now));
         entry.consume(
-            Instant::now(),
+            now,
             Duration::from_secs(self.config.rate_limit_window_seconds),
             self.config.rate_limit_max_requests,
         )
     }
 
-    pub async fn register_idempotency_key(&self, key: &str, method: &str, path: &str) -> bool {
-        self.state_store
+    pub async fn register_idempotency_key(
+        &self,
+        key: &str,
+        method: &str,
+        path: &str,
+    ) -> Result<IdempotencyDecision> {
+        let accepted = self
+            .state_store
             .register_idempotency_key(key, method, path, self.config.idempotency_ttl_seconds)
             .await
-            .unwrap_or(false)
+            .map_err(|err| anyhow::anyhow!("idempotency backend unavailable: {err}"))?;
+        if accepted {
+            Ok(IdempotencyDecision::Registered)
+        } else {
+            Ok(IdempotencyDecision::Duplicate)
+        }
     }
 
     pub async fn remove_idempotency_key(&self, key: &str) {
         let _ = self.state_store.remove_idempotency_key(key).await;
+    }
+
+    pub async fn load_cached_jwks(&self) -> Option<JwkSet> {
+        let cache = self.jwks_cache.lock().await;
+        let cached = cache.as_ref()?;
+        let ttl = Duration::from_secs(self.config.jwks_cache_ttl_seconds.max(5));
+        if cached.fetched_at.elapsed() > ttl {
+            return None;
+        }
+        Some(cached.set.clone())
+    }
+
+    pub async fn store_cached_jwks(&self, set: JwkSet) {
+        let mut cache = self.jwks_cache.lock().await;
+        *cache = Some(CachedJwks {
+            fetched_at: Instant::now(),
+            set,
+        });
     }
 }
 
@@ -183,8 +237,12 @@ mod tests {
             internal_api_token: Some("internal-test-token".into()),
             rate_limit_window_seconds: 60,
             rate_limit_max_requests: 120,
+            rate_bucket_ttl_seconds: 300,
+            rate_bucket_max_keys: 1024,
             idempotency_ttl_seconds: 900,
             idempotency_backend: IdempotencyBackend::Sqlite,
+            jwks_cache_ttl_seconds: 300,
+            jwks_fetch_timeout_ms: 1000,
             state_db_path: env::temp_dir()
                 .join(format!("edge-control-test-{}.db", Uuid::new_v4()))
                 .display()
@@ -285,5 +343,51 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(second.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn idempotency_backend_failure_returns_service_unavailable() {
+        let mut config = test_config();
+        config.idempotency_backend = IdempotencyBackend::Supabase;
+        config.supabase_url = Some("http://127.0.0.1:9".into());
+        config.supabase_service_role_key = Some("service-role-test".into());
+        let policy_set = PolicySet::load(&config.policy_set_path).expect("policy");
+        let state_store = StateStore::from_config(&config).expect("state store");
+        let app = build_app(Arc::new(AppState::new(config, policy_set, state_store)));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/intention/draft")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer internal-test-token")
+                    .header("x-idempotency-key", "idem-backend-down")
+                    .body(Body::from(
+                        r#"{"version":"intention.draft.request.v1","intent_text":"fix auth bug","context":{"repo":"code247","default_branch":"main"}}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn rate_bucket_is_bounded_and_evicted() {
+        let mut config = test_config();
+        config.rate_bucket_max_keys = 3;
+        config.rate_bucket_ttl_seconds = 300;
+        let policy_set = PolicySet::load(&config.policy_set_path).expect("policy");
+        let state_store = StateStore::from_config(&config).expect("state db");
+        let state = AppState::new(config, policy_set, state_store);
+
+        assert!(state.consume_rate_slot("a").await);
+        assert!(state.consume_rate_slot("b").await);
+        assert!(state.consume_rate_slot("c").await);
+        assert!(state.consume_rate_slot("d").await);
+
+        let buckets = state.rate_buckets.lock().await;
+        assert!(buckets.len() <= 3);
     }
 }

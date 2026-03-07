@@ -394,8 +394,12 @@ mod tests {
             internal_api_token: Some("internal-test-token".into()),
             rate_limit_window_seconds: 60,
             rate_limit_max_requests: 120,
+            rate_bucket_ttl_seconds: 300,
+            rate_bucket_max_keys: 1024,
             idempotency_ttl_seconds: 900,
             idempotency_backend: IdempotencyBackend::Sqlite,
+            jwks_cache_ttl_seconds: 300,
+            jwks_fetch_timeout_ms: 1000,
             state_db_path: env::temp_dir()
                 .join(format!(
                     "edge-control-orchestration-test-{}.db",

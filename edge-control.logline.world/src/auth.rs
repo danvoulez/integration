@@ -1,6 +1,7 @@
 use axum::http::{header, HeaderMap};
 use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
+use tokio::time::{timeout, Duration};
 
 use crate::{models::ErrorResponseV1, AppState};
 
@@ -46,17 +47,7 @@ async fn decode_supabase_jwks(token: &str, state: &AppState) -> Option<AuthConte
     let header = decode_header(token).ok()?;
     let kid = header.kid?;
 
-    let jwks = state
-        .http_client
-        .get(jwks_url)
-        .send()
-        .await
-        .ok()?
-        .error_for_status()
-        .ok()?
-        .json::<JwkSet>()
-        .await
-        .ok()?;
+    let jwks = fetch_jwks(state, jwks_url).await?;
     let jwk = jwks
         .keys
         .into_iter()
@@ -94,6 +85,28 @@ async fn decode_supabase_jwks(token: &str, state: &AppState) -> Option<AuthConte
         tenant_id,
         role: claims.role,
     })
+}
+
+async fn fetch_jwks(state: &AppState, jwks_url: &str) -> Option<JwkSet> {
+    if let Some(cached) = state.load_cached_jwks().await {
+        return Some(cached);
+    }
+
+    let timeout_ms = state.config.jwks_fetch_timeout_ms.max(100);
+    let response = timeout(
+        Duration::from_millis(timeout_ms),
+        state.http_client.get(jwks_url).send(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    let response = response.error_for_status().ok()?;
+    let jwks = timeout(Duration::from_millis(timeout_ms), response.json::<JwkSet>())
+        .await
+        .ok()?
+        .ok()?;
+    state.store_cached_jwks(jwks.clone()).await;
+    Some(jwks)
 }
 
 pub async fn validate_headers(

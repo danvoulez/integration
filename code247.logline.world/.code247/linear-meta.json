@@ -1,27 +1,27 @@
 {
   "ci": {
     "ci_target": null,
-    "queue_id": "q-7e954eae"
+    "queue_id": "q-sample"
   },
   "linear": {
     "intentions": [
       {
         "board": "project-x",
-        "id": "intent-block-done",
+        "id": "intent-done",
         "issue_id": "VV-1"
       }
     ]
   },
-  "observed_at": "2026-03-07T10:13:54.599357+00:00",
+  "observed_at": "2026-03-07T00:00:00Z",
   "project": "project-x",
-  "request_id": "7e954eae-7d5e-446d-a76e-e75bdae78979",
+  "request_id": "sample-request-id",
   "revision": "state-governance-test",
   "source": "/tmp/state-governance",
   "sync": {
     "errors": [],
-    "observed_at": "2026-03-07T10:13:54.602860+00:00",
+    "observed_at": "2026-03-07T00:00:00Z",
     "project": "project-x",
-    "request_id": "b5adf3af-df31-4975-85cf-b2192785becc",
+    "request_id": "sample-sync-request-id",
     "synced": [
       {
         "comment_posted": true,
@@ -36,5 +36,4 @@
   },
   "updated_at": "2026-03-07T08:00:00Z",
   "workspace": "workspace-a"
-}kspace-a"
 }
