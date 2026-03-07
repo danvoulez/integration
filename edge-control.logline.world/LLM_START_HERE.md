@@ -1,93 +1,80 @@
-# Edge Control — LLM Start Here
+# LLM START HERE: EDGE-CONTROL
 
-**Read the root `LLM_START_HERE.md` first.**
+## Authority
 
-## What is Edge Control?
+- Owns deterministic policy gating at the edge
+- Owns orchestration entrypoints into `Code247`
+- Owns causal Fuel emission for edge opinions/decisions
 
-Edge Control is the control-plane service for the LogLine ecosystem. It enforces policy, orchestrates workflows, and acts as the "judge" in the Transistor pattern.
+## Entry Files
 
-## Architecture
+- `src/main.rs`: app wiring
+- `src/auth.rs`: inbound auth
+- `src/middleware.rs`: request id, auth, rate limit, idempotency
+- `src/policy.rs`: deterministic policy evaluation
+- `src/handlers.rs`: HTTP handlers
+- `src/orchestration.rs`: `edge-control -> Code247`
+- `src/fuel.rs`: fuel ledger emission
+- `src/state_store.rs`: idempotency backend
 
-```
-Request → Auth → Policy Gate → Execution → Fuel Event → Response
-                    ↓
-           policy-set.v1.1.json
-```
+## HTTP Surface
 
-## Transistor Pattern
+- `POST /v1/intention/draft`
+- `POST /v1/pr/risk`
+- `POST /v1/fuel/diff/route`
+- `POST /v1/orchestrate/intention-confirmed`
+- `POST /v1/orchestrate/github-event`
+- `POST /v1/orchestrate/rollback`
+- `GET /health`
 
-1. **LLM emits `OpinionSignal.v1`** — draft intention, risk opinion
-2. **Edge Control applies deterministic rules** — policy-set.v1.1
-3. **Edge Control emits `GateDecision.v1`** — allow/deny with reason
+## Auth Rules
 
-**No direct execution from LLM output is allowed.**
+- Inbound preferred auth: Supabase JWKS/JWT
+- Inbound fallback: internal bearer only when configured
+- Outbound to `Code247`: short-lived Supabase HS256 service JWT
+- Legacy `CODE247_INTENTIONS_TOKEN`: fallback only
 
-## Key Files
+## Decision Rules
 
-| File | Purpose |
-|------|---------|
-| `src/main.rs` | Entry point |
-| `src/auth.rs` | JWT/token validation |
-| `src/policy.rs` | Policy loading and evaluation |
-| `src/handlers.rs` | Route handlers |
-| `src/orchestration.rs` | Workflow orchestration |
-| `src/fuel.rs` | Fuel event emission |
+- LLM/opinion never executes directly
+- `edge-control` decides via deterministic policy
+- All protected routes emit `x-gate-decision` and `x-gate-policy`
+- Human checkpoints:
+  - `YES_HUMAN_1` only for intention confirmation
+  - `YES_HUMAN_2` only for rollback approval
 
-## Critical Endpoints
+## Persistence/Infra Rules
 
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /v1/intention/draft` | Draft intention (LLM → opinion) |
-| `POST /v1/pr/risk` | PR risk assessment |
-| `POST /v1/fuel/diff/route` | Fuel diff routing |
-| `POST /v1/orchestrate/intention-confirmed` | YES/HUMAN #1 checkpoint |
-| `POST /v1/orchestrate/rollback` | YES/HUMAN #2 checkpoint |
-| `POST /v1/orchestrate/github-event` | GitHub → Linear sync |
-| `GET /health` | Health check |
+- Idempotency backend: `auto|supabase|sqlite`
+- Operational default: shared Supabase path
+- SQLite is fallback for dev/test only
+- Supabase is primary for Fuel events and shared idempotency
 
-## Human Checkpoints
+## Secrets
 
-| Checkpoint | When |
-|------------|------|
-| **YES/HUMAN #1** | Confirm `DraftIntention` before execution |
-| **YES/HUMAN #2** | Approve rollback/undo/destructive reversal |
+- Use `doppler run --project logline-ecosystem --config <env> -- cargo run`
+- Do not use `.env` as standard runtime
+- Relevant secrets/config:
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_JWT_SECRET`
+  - `SUPABASE_JWKS_URL`
+  - `OBS_API_TOKEN`
 
-## Policy Enforcement
-
-- Default policy: `../policy/policy-set.v1.1.json`
-- Override: `EDGE_CONTROL_POLICY_SET_PATH`
-- Every protected endpoint emits:
-  - `x-gate-decision` header
-  - `x-gate-policy` header
-  - Structured log entry
-
-## What You MUST NOT Do
-
-1. **Never bypass policy gates**
-2. **Never emit `GateDecision` without causal `trace_id` and `parent_event_id`**
-3. **Never approve human checkpoints programmatically**
-4. **Never modify policy without validation**
-
-## What You SHOULD Do
-
-1. Always emit causal events (`trace_id`, `parent_event_id`)
-2. Include `reason_codes` in gate decisions
-3. Mirror events to `obs-api`
-4. Use deterministic policy evaluation
-
-## Quick Commands
+## Required Checks
 
 ```bash
-# Run locally
-cargo run
-
-# Health check
-curl http://localhost:8080/health
+cargo test --manifest-path edge-control.logline.world/Cargo.toml
 ```
 
-## Key Docs
+## Do Not Do
 
-- `README.md` — Endpoints and configuration
-- `TASKLIST.md` — Current backlog
-- `../policy/policy-set.v1.1.json` — Active policy
-- `../contracts/schemas/gate-decision.v1.schema.json` — Gate decision contract
+- Do not bypass policy gates
+- Do not auto-approve human checkpoints
+- Do not emit gate/fuel events without causal linkage
+- Do not revert shared idempotency to in-memory-only behavior
+
+## Next Docs
+
+- `README.md`
+- `../TASKLIST-GERAL.md`

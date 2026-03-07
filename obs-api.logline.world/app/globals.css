@@ -36,9 +36,9 @@
   --glass-blur: 16px;
 }
 
-/* Dark mode overrides (Assuming user system prefers dark or dynamic theme) */
+/* Dark mode overrides — supports both system preference and manual toggle */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --black: #ffffff;
     --white: #0c0c0e;
     --bg: #0c0c0e;
@@ -46,13 +46,28 @@
     --line: rgba(255, 255, 255, 0.08);
     --line-bold: rgba(255, 255, 255, 0.8);
     --line-light: rgba(255, 255, 255, 0.05);
-    /* Overlays */
     --t1: #f3f4f6;
     --t2: #9ca3af;
     --t3: #6b7280;
     --s1: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
     --s2: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
   }
+}
+
+/* Manual dark mode toggle */
+:root[data-theme="dark"] {
+  --black: #ffffff;
+  --white: #0c0c0e;
+  --bg: #0c0c0e;
+  --bg-card: rgba(255, 255, 255, 0.03);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-bold: rgba(255, 255, 255, 0.8);
+  --line-light: rgba(255, 255, 255, 0.05);
+  --t1: #f3f4f6;
+  --t2: #9ca3af;
+  --t3: #6b7280;
+  --s1: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
+  --s2: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
 }
 
 *,
@@ -107,13 +122,16 @@ body::before {
 .card:hover {
   box-shadow: inset 0 1px 0 var(--line-light), var(--s2);
   border-color: rgba(0, 0, 0, 0.12);
-  /* Slightly harder line on hover (light mode) */
 }
 
 @media (prefers-color-scheme: dark) {
-  .card:hover {
+  :root:not([data-theme="light"]) .card:hover {
     border-color: rgba(255, 255, 255, 0.15);
   }
+}
+
+:root[data-theme="dark"] .card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 /* ── Premium Button ── */
@@ -141,14 +159,18 @@ body::before {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.25);
   background: #1a1a1e;
-  /* slight lift */
 }
 
 @media (prefers-color-scheme: dark) {
-  .btn:hover {
+  :root:not([data-theme="light"]) .btn:hover {
     background: #e5e7eb;
     box-shadow: 0 6px 16px rgba(255, 255, 255, 0.1);
   }
+}
+
+:root[data-theme="dark"] .btn:hover {
+  background: #e5e7eb;
+  box-shadow: 0 6px 16px rgba(255, 255, 255, 0.1);
 }
 
 .btn:active {
@@ -299,9 +321,13 @@ body::before {
 }
 
 @media (prefers-color-scheme: dark) {
-  .row:active {
+  :root:not([data-theme="light"]) .row:active {
     background: rgba(255, 255, 255, 0.02);
   }
+}
+
+:root[data-theme="dark"] .row:active {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 @media (hover: hover) {
@@ -311,10 +337,14 @@ body::before {
   }
 
   @media (prefers-color-scheme: dark) {
-    .row:hover {
+    :root:not([data-theme="light"]) .row:hover {
       background: rgba(255, 255, 255, 0.03);
     }
   }
+}
+
+:root[data-theme="dark"] .row:hover {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 /* ── Micro-interaction Press ── */
@@ -355,10 +385,15 @@ body::before {
 }
 
 @media (prefers-color-scheme: dark) {
-  .fab:hover {
+  :root:not([data-theme="light"]) .fab:hover {
     background: #e5e7eb;
     box-shadow: 0 12px 40px rgba(255, 255, 255, 0.1);
   }
+}
+
+:root[data-theme="dark"] .fab:hover {
+  background: #e5e7eb;
+  box-shadow: 0 12px 40px rgba(255, 255, 255, 0.1);
 }
 
 .fab:active {
@@ -377,9 +412,13 @@ body::before {
 }
 
 @media (prefers-color-scheme: dark) {
-  .glass-header {
+  :root:not([data-theme="light"]) .glass-header {
     background: rgba(12, 12, 14, 0.65);
   }
+}
+
+:root[data-theme="dark"] .glass-header {
+  background: rgba(12, 12, 14, 0.65);
 }
 
 /* ── Custom Scrollbar ── */
@@ -534,4 +573,24 @@ body::before {
 
 .trend-flat {
   color: var(--t3);
+}
+
+/* ── Sidebar Nav Item Hover ── */
+.sidebar-nav-item {
+  transition: all 0.15s ease;
+}
+
+.sidebar-nav-item:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+  color: var(--t1) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sidebar-nav-item:hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+  }
+}
+
+:root[data-theme="dark"] .sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
 }

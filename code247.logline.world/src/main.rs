@@ -9,10 +9,12 @@ mod persistence_rs;
 mod pipeline_rs;
 mod policy_gate_rs;
 mod pr_creator_rs;
+mod resilience_rs;
 mod risk_classifier_rs;
 mod state_machine_rs;
 mod supabase_sync_rs;
 mod test_runner_rs;
+mod transition_guard_rs;
 
 use std::{
     path::PathBuf,
@@ -34,8 +36,9 @@ use file_writer_rs::FileWriter;
 use manifest_validation_rs::{validate_manifest, ManifestValidationConfig};
 use persistence_rs::{
     CheckpointStore, EvidenceStore, ExecutionLogger, IntentionLinkRepository, JobsRepository,
-    LinearOAuthTokenRepository, LinearWebhookDelivery, LinearWebhookDeliveryRepository,
-    ManifestIngestionRepository, OAuthStateRepository, SqliteDb,
+    LinearOAuthTokenRepository, LinearOutboxAction, LinearOutboxRepository, LinearWebhookDelivery,
+    LinearWebhookDeliveryRepository, ManifestIngestionRepository, OAuthStateRepository,
+    RunTimelineRepository, SqliteDb,
 };
 use pipeline_rs::Pipeline;
 use policy_gate_rs::PrRiskPolicy;
@@ -43,6 +46,9 @@ use pr_creator_rs::PrCreator;
 use state_machine_rs::StateMachine;
 use supabase_sync_rs::{spawn_sync_worker, SupabaseSyncConfig};
 use test_runner_rs::TestRunner;
+use transition_guard_rs::{
+    classify_linear_workflow_state, is_linear_transition_allowed, LinearWorkflowState,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -119,6 +125,8 @@ async fn main() -> Result<()> {
         db.connection(),
     )));
     let intention_links = Arc::new(Mutex::new(IntentionLinkRepository::new(db.connection())));
+    let run_timeline = Arc::new(Mutex::new(RunTimelineRepository::new(db.connection())));
+    let linear_outbox = Arc::new(Mutex::new(LinearOutboxRepository::new(db.connection())));
     let webhook_deliveries = Arc::new(Mutex::new(LinearWebhookDeliveryRepository::new(
         db.connection(),
     )));
@@ -129,6 +137,7 @@ async fn main() -> Result<()> {
     let linear = LinearAdapter::new(
         config.linear_api_key.clone().unwrap_or_default(),
         config.linear_team_id.clone(),
+        config.linear_api_base_url.clone(),
     );
     let git = GitAdapter::new(
         config.repo_root.clone(),
@@ -165,7 +174,7 @@ async fn main() -> Result<()> {
         jobs.clone(),
         checkpoints,
         evidence,
-        execution_logger,
+        execution_logger.clone(),
         StateMachine::default(),
         llm,
         git.clone(),
@@ -182,10 +191,18 @@ async fn main() -> Result<()> {
             config.code247_runner_allowlist_manifest_path.clone(),
         ),
         pr_policy,
+        linear_outbox.clone(),
         pr_creator,
         config.max_review_iterations,
+        config.stage_lease_owner.clone(),
+        config.stage_timeout_planning_seconds,
+        config.stage_timeout_coding_seconds,
+        config.stage_timeout_reviewing_seconds,
+        config.stage_timeout_validating_seconds,
+        config.stage_timeout_committing_seconds,
         config.linear_claim_in_progress_state_name.clone(),
         config.linear_ready_for_release_state_name.clone(),
+        config.linear_done_state_type.clone(),
     ));
 
     let worker = spawn_worker(
@@ -194,6 +211,8 @@ async fn main() -> Result<()> {
         linear.clone(),
         config.poll_interval_ms,
         config.max_concurrent_jobs,
+        config.stage_lease_owner.clone(),
+        config.stage_timeout_planning_seconds,
         shutdown_rx,
     );
     let oauth_client = if config.linear_oauth_enabled() {
@@ -209,6 +228,7 @@ async fn main() -> Result<()> {
                 .expect("redirect_uri checked"),
             config.linear_oauth_scopes.clone(),
             config.linear_oauth_actor.clone(),
+            config.linear_oauth_base_url.clone(),
         ))
     } else {
         None
@@ -228,6 +248,8 @@ async fn main() -> Result<()> {
             linear.clone(),
             config.linear_claim_state_name.clone(),
             config.linear_claim_in_progress_state_name.clone(),
+            config.linear_ready_for_release_state_name.clone(),
+            config.linear_done_state_type.clone(),
             config.linear_claim_interval_seconds,
             config.linear_claim_max_per_cycle,
             shutdown_tx.subscribe(),
@@ -247,6 +269,9 @@ async fn main() -> Result<()> {
             webhook_deliveries.clone(),
             jobs.clone(),
             config.linear_claim_state_name.clone(),
+            config.linear_claim_in_progress_state_name.clone(),
+            config.linear_ready_for_release_state_name.clone(),
+            config.linear_done_state_type.clone(),
             config.linear_webhook_poll_interval_seconds,
             config.linear_webhook_retry_delay_seconds,
             config.linear_webhook_max_attempts,
@@ -256,9 +281,25 @@ async fn main() -> Result<()> {
         info!("linear webhook worker disabled (LINEAR_WEBHOOK_SECRET not configured)");
         None
     };
+    let linear_outbox_worker = Some(spawn_linear_outbox_worker(
+        linear_outbox.clone(),
+        linear.clone(),
+        config.linear_webhook_poll_interval_seconds,
+        config.linear_webhook_retry_delay_seconds,
+        config.linear_webhook_max_attempts,
+        shutdown_tx.subscribe(),
+    ));
+    let stage_lease_sweeper = Some(spawn_stage_lease_sweeper(
+        jobs.clone(),
+        execution_logger.clone(),
+        linear_outbox.clone(),
+        config.stage_lease_sweep_interval_seconds,
+        shutdown_tx.subscribe(),
+    ));
     let api = tokio::spawn(api_rs::serve(
         config.clone(),
         jobs,
+        run_timeline,
         oauth_states,
         oauth_tokens,
         manifest_ingestions,
@@ -278,6 +319,12 @@ async fn main() -> Result<()> {
     if let Some(webhook_worker) = webhook_worker {
         webhook_worker.await??;
     }
+    if let Some(linear_outbox_worker) = linear_outbox_worker {
+        linear_outbox_worker.await??;
+    }
+    if let Some(stage_lease_sweeper) = stage_lease_sweeper {
+        stage_lease_sweeper.await??;
+    }
     if let Some(refresh_worker) = oauth_refresh_worker {
         refresh_worker.await??;
     }
@@ -294,6 +341,8 @@ fn spawn_worker(
     linear: LinearAdapter,
     poll_interval_ms: u64,
     max_concurrent_jobs: usize,
+    stage_lease_owner: String,
+    planning_timeout_seconds: i64,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> JoinHandle<Result<()>> {
     tokio::spawn(async move {
@@ -302,7 +351,10 @@ fn spawn_worker(
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    let maybe_job = jobs.lock().expect("lock jobs").next_pending();
+                    let maybe_job = jobs
+                        .lock()
+                        .expect("lock jobs")
+                        .claim_next_pending_with_lease(&stage_lease_owner, planning_timeout_seconds);
                     if let Some(job) = maybe_job {
                         let permit = semaphore.clone().acquire_owned().await.expect("semaphore closed");
                         let jobs_ref = jobs.clone();
@@ -357,6 +409,8 @@ fn spawn_linear_claim_worker(
     linear: LinearAdapter,
     claim_state_name: String,
     claim_in_progress_state_name: String,
+    ready_for_release_state_name: String,
+    done_state_type: String,
     claim_interval_seconds: u64,
     claim_max_per_cycle: usize,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
@@ -394,7 +448,21 @@ fn spawn_linear_claim_worker(
                         if claimed >= claim_max_per_cycle {
                             break;
                         }
-                        if issue.state.r#type.eq_ignore_ascii_case("completed") {
+                        let current_state = classify_linear_workflow_state(
+                            &issue.state.name,
+                            &issue.state.r#type,
+                            &claim_state_name,
+                            &claim_in_progress_state_name,
+                            &ready_for_release_state_name,
+                            &done_state_type,
+                        );
+                        if current_state == LinearWorkflowState::Done {
+                            continue;
+                        }
+                        if !is_linear_transition_allowed(
+                            current_state,
+                            LinearWorkflowState::InProgress,
+                        ) {
                             continue;
                         }
 
@@ -470,6 +538,9 @@ fn spawn_linear_webhook_worker(
     webhook_store: Arc<Mutex<LinearWebhookDeliveryRepository>>,
     jobs: Arc<Mutex<JobsRepository>>,
     claim_state_name: String,
+    claim_in_progress_state_name: String,
+    ready_for_release_state_name: String,
+    done_state_type: String,
     poll_interval_seconds: u64,
     retry_delay_seconds: u64,
     max_attempts: i32,
@@ -493,6 +564,9 @@ fn spawn_linear_webhook_worker(
                         &delivery,
                         jobs.clone(),
                         &claim_state_name,
+                        &claim_in_progress_state_name,
+                        &ready_for_release_state_name,
+                        &done_state_type,
                     );
                     match result {
                         Ok(outcome) => {
@@ -556,6 +630,9 @@ fn process_linear_webhook_delivery(
     delivery: &LinearWebhookDelivery,
     jobs: Arc<Mutex<JobsRepository>>,
     claim_state_name: &str,
+    claim_in_progress_state_name: &str,
+    ready_for_release_state_name: &str,
+    done_state_type: &str,
 ) -> Result<String> {
     let payload: Value = serde_json::from_str(&delivery.payload)
         .map_err(|err| anyhow!("invalid webhook payload JSON: {err}"))?;
@@ -590,20 +667,27 @@ fn process_linear_webhook_delivery(
         return Ok("ignored payload without issue id".to_string());
     };
 
-    let is_completed = payload
-        .pointer("/data/state/type")
-        .and_then(Value::as_str)
-        .map(|value| value.eq_ignore_ascii_case("completed"))
-        .unwrap_or(false);
-    if is_completed {
-        return Ok(format!("ignored completed issue {issue_id}"));
-    }
     let state_name = payload
         .pointer("/data/state/name")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let should_claim_from_state = !claim_state_name.trim().is_empty()
-        && state_name.eq_ignore_ascii_case(claim_state_name.trim());
+    let state_type = payload
+        .pointer("/data/state/type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let current_state = classify_linear_workflow_state(
+        state_name,
+        state_type,
+        claim_state_name,
+        claim_in_progress_state_name,
+        ready_for_release_state_name,
+        done_state_type,
+    );
+    if current_state == LinearWorkflowState::Done {
+        return Ok(format!("ignored completed issue {issue_id}"));
+    }
+    let should_claim_from_state = current_state == LinearWorkflowState::Ready
+        && is_linear_transition_allowed(current_state, LinearWorkflowState::InProgress);
     let should_claim_from_label = extract_queue_labels(&payload)
         .iter()
         .any(|label| label.eq_ignore_ascii_case("code247:queue"));
@@ -635,6 +719,205 @@ fn process_linear_webhook_delivery(
     }
     let job = jobs_repo.create_job(&issue_id, &payload_text)?;
     Ok(format!("created job {} for issue {}", job.id, issue_id))
+}
+
+fn spawn_linear_outbox_worker(
+    outbox: Arc<Mutex<LinearOutboxRepository>>,
+    linear: LinearAdapter,
+    poll_interval_seconds: u64,
+    retry_delay_seconds: u64,
+    max_attempts: i32,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) -> JoinHandle<Result<()>> {
+    tokio::spawn(async move {
+        let mut ticker = time::interval(Duration::from_secs(poll_interval_seconds.max(2)));
+
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    let maybe_action = {
+                        let store = outbox.lock().expect("lock linear outbox");
+                        store.claim_next_ready()
+                    };
+                    let Some(action) = maybe_action else {
+                        continue;
+                    };
+
+                    match process_linear_outbox_action(&linear, &action).await {
+                        Ok(()) => {
+                            let store = outbox.lock().expect("lock linear outbox");
+                            if let Err(err) = store.mark_done(&action.id) {
+                                error!(action_id=%action.id, error=%err, "failed to mark linear outbox action done");
+                            }
+                        }
+                        Err(err) => {
+                            let store = outbox.lock().expect("lock linear outbox");
+                            if let Err(mark_err) = store.mark_retry_or_dlq(
+                                &action.id,
+                                action.attempts,
+                                max_attempts.max(1),
+                                retry_delay_seconds as i64,
+                                &err.to_string(),
+                            ) {
+                                error!(action_id=%action.id, error=%mark_err, "failed to update linear outbox retry state");
+                            }
+                            warn!(
+                                action_id=%action.id,
+                                issue_id=%action.issue_id,
+                                action_type=%action.action_type,
+                                attempts=action.attempts,
+                                error=%err,
+                                "linear outbox action failed"
+                            );
+                        }
+                    }
+                }
+                changed = shutdown.changed() => {
+                    if changed.is_ok() && *shutdown.borrow() {
+                        info!("linear outbox worker shutdown complete");
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn spawn_stage_lease_sweeper(
+    jobs: Arc<Mutex<JobsRepository>>,
+    execution_logger: Arc<Mutex<ExecutionLogger>>,
+    linear_outbox: Arc<Mutex<LinearOutboxRepository>>,
+    interval_seconds: u64,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) -> JoinHandle<Result<()>> {
+    tokio::spawn(async move {
+        let mut ticker = time::interval(Duration::from_secs(interval_seconds.max(5)));
+
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    let expired = {
+                        let repo = jobs.lock().expect("lock jobs");
+                        repo.list_expired_stage_leases(&Utc::now())
+                    };
+
+                    for lease in expired {
+                        let lease_expires_at = lease.lease_expires_at.clone().unwrap_or_else(|| "unknown".to_string());
+                        let error_message = format!(
+                            "stage lease expired: status={} lease_expires_at={} owner={}",
+                            lease.status.as_str(),
+                            lease_expires_at,
+                            lease.lease_owner.clone().unwrap_or_else(|| "unknown".to_string())
+                        );
+                        let changed = {
+                            let mut repo = jobs.lock().expect("lock jobs");
+                            repo.expire_stage_lease(
+                                &lease.id,
+                                lease.status,
+                                lease.lease_owner.as_deref(),
+                                lease.lease_expires_at.as_deref(),
+                                &error_message,
+                            )
+                        };
+                        if !changed {
+                            continue;
+                        }
+
+                        execution_logger
+                            .lock()
+                            .expect("logger lock")
+                            .log_stage(
+                                &lease.id,
+                                "lease_expired",
+                                &serde_json::to_string(&serde_json::json!({
+                                    "status": lease.status.as_str(),
+                                    "stage_started_at": lease.stage_started_at,
+                                    "heartbeat_at": lease.heartbeat_at,
+                                    "lease_expires_at": lease.lease_expires_at,
+                                    "lease_owner": lease.lease_owner,
+                                    "stage_attempt": lease.stage_attempt,
+                                }))?,
+                                &serde_json::to_string(&serde_json::json!({
+                                    "error": error_message,
+                                    "action": "failed",
+                                    "mode": "stage_lease_enforcement",
+                                }))?,
+                                "stage-lease:v1",
+                                0,
+                            );
+
+                        if !lease.issue_id.trim().is_empty()
+                            && !lease.issue_id.starts_with("smoke:")
+                        {
+                            if let Err(err) = linear_outbox
+                                .lock()
+                                .expect("linear outbox lock")
+                                .enqueue(
+                                    &lease.issue_id,
+                                    "comment",
+                                    &serde_json::json!({
+                                        "body": format!(
+                                            "`code247:lease-expired` run_id=`{}` stage=`{}` lease_expires_at=`{}` action=`failed`",
+                                            lease.id,
+                                            lease.status.as_str(),
+                                            lease_expires_at
+                                        )
+                                    }),
+                                )
+                            {
+                                error!(job_id=%lease.id, issue_id=%lease.issue_id, error=%err, "failed to enqueue stage lease expiration comment");
+                            }
+                        }
+
+                        warn!(
+                            job_id=%lease.id,
+                            issue_id=%lease.issue_id,
+                            status=%lease.status.as_str(),
+                            lease_expires_at=%lease_expires_at,
+                            "stage lease expired and job auto-escalated to failed"
+                        );
+                    }
+                }
+                changed = shutdown.changed() => {
+                    if changed.is_ok() && *shutdown.borrow() {
+                        info!("stage lease sweeper shutdown complete");
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    })
+}
+
+async fn process_linear_outbox_action(
+    linear: &LinearAdapter,
+    action: &LinearOutboxAction,
+) -> Result<()> {
+    let payload: Value = serde_json::from_str(&action.payload)
+        .map_err(|err| anyhow!("invalid outbox payload JSON: {err}"))?;
+
+    match action.action_type.as_str() {
+        "comment" => {
+            let body = payload
+                .get("body")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| anyhow!("missing outbox comment body"))?;
+            linear.create_comment(&action.issue_id, body).await
+        }
+        "transition" => {
+            let state_name = payload
+                .get("state_name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| anyhow!("missing outbox state_name"))?;
+            let state_id = linear.find_state_id_by_name(state_name).await?;
+            linear.update_issue_state(&action.issue_id, &state_id).await
+        }
+        other => Err(anyhow!("unsupported linear outbox action: {other}")),
+    }
 }
 
 fn extract_queue_labels(payload: &Value) -> Vec<String> {

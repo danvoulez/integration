@@ -5,6 +5,8 @@ use serde_json::json;
 use tokio::process::Command;
 use urlencoding::encode;
 
+use crate::resilience_rs::{HttpResilience, ResiliencePolicy};
+
 #[derive(Clone)]
 pub struct AnthropicAdapter {
     model: String,
@@ -182,6 +184,7 @@ pub struct LlmGatewayAdapter {
     gateway_url: String,
     api_key: String,
     http: Client,
+    resilience: HttpResilience,
 }
 
 impl LlmGatewayAdapter {
@@ -190,6 +193,7 @@ impl LlmGatewayAdapter {
             gateway_url,
             api_key,
             http: Client::new(),
+            resilience: HttpResilience::new(ResiliencePolicy::default()),
         }
     }
 
@@ -309,12 +313,14 @@ impl LlmGatewayAdapter {
         });
 
         let response: GatewayResponse = self
-            .http
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&req)
-            .send()
+            .resilience
+            .send("llm_gateway.chat", || {
+                self.http
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", self.api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&req)
+            })
             .await
             .context("falha ao chamar llm-gateway")?
             .error_for_status()
@@ -455,7 +461,9 @@ pub struct LinearOAuthClient {
     redirect_uri: String,
     scopes: String,
     actor: String,
+    oauth_base_url: String,
     http: Client,
+    resilience: HttpResilience,
 }
 
 impl LinearOAuthClient {
@@ -465,6 +473,7 @@ impl LinearOAuthClient {
         redirect_uri: String,
         scopes: String,
         actor: String,
+        oauth_base_url: String,
     ) -> Self {
         Self {
             client_id,
@@ -472,13 +481,16 @@ impl LinearOAuthClient {
             redirect_uri,
             scopes,
             actor,
+            oauth_base_url,
             http: Client::new(),
+            resilience: HttpResilience::new(ResiliencePolicy::default()),
         }
     }
 
     pub fn authorize_url(&self, state: &str) -> String {
         format!(
-            "https://linear.app/oauth/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&actor={}",
+            "{}/oauth/authorize?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&actor={}",
+            self.oauth_base_url.trim_end_matches('/'),
             encode(&self.client_id),
             encode(&self.redirect_uri),
             encode(&self.scopes),
@@ -510,10 +522,15 @@ impl LinearOAuthClient {
 
     async fn token_request(&self, form: &[(&str, &str)]) -> Result<LinearOAuthTokenResponse> {
         let response = self
-            .http
-            .post("https://api.linear.app/oauth/token")
-            .form(form)
-            .send()
+            .resilience
+            .send("linear.oauth.token", || {
+                self.http
+                    .post(format!(
+                        "{}/oauth/token",
+                        self.oauth_base_url.trim_end_matches('/')
+                    ))
+                    .form(form)
+            })
             .await
             .context("falha ao chamar endpoint OAuth token do Linear")?;
 
@@ -535,24 +552,30 @@ impl LinearOAuthClient {
 pub struct LinearAdapter {
     api_key: String,
     team_id: String,
+    api_base_url: String,
     http: Client,
+    resilience: HttpResilience,
 }
 
 impl LinearAdapter {
-    pub fn new(api_key: String, team_id: String) -> Self {
+    pub fn new(api_key: String, team_id: String, api_base_url: String) -> Self {
         Self {
             api_key,
             team_id,
+            api_base_url,
             http: Client::new(),
+            resilience: HttpResilience::new(ResiliencePolicy::default()),
         }
     }
 
     pub async fn get_issue(&self, issue_id: &str) -> Result<LinearIssue> {
-        self.graphql(
+        let result: LinearIssueResult = self
+            .graphql(
             r#"query($id:String!){issue(id:$id){id identifier title description state{id name type}}}"#,
             json!({"id": issue_id}),
         )
-        .await
+        .await?;
+        Ok(result.issue)
     }
 
     pub async fn list_team_issues(&self, state_name: Option<&str>) -> Result<Vec<LinearIssue>> {
@@ -730,12 +753,18 @@ impl LinearAdapter {
         query: &str,
         variables: serde_json::Value,
     ) -> Result<T> {
+        let payload = json!({"query": query, "variables": variables});
         let response: GraphqlEnvelope<T> = self
-            .http
-            .post("https://api.linear.app/graphql")
-            .bearer_auth(&self.api_key)
-            .json(&json!({"query": query, "variables": variables}))
-            .send()
+            .resilience
+            .send("linear.graphql", || {
+                self.http
+                    .post(format!(
+                        "{}/graphql",
+                        self.api_base_url.trim_end_matches('/')
+                    ))
+                    .bearer_auth(&self.api_key)
+                    .json(&payload)
+            })
             .await
             .context("falha ao chamar Linear")?
             .error_for_status()
@@ -925,6 +954,11 @@ pub struct LinearState {
 #[derive(Debug, Deserialize)]
 struct LinearIssuesResult {
     issues: LinearIssueNodes,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssueResult {
+    issue: LinearIssue,
 }
 
 #[derive(Debug, Deserialize)]

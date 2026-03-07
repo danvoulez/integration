@@ -51,7 +51,7 @@ pub async fn auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    match auth::validate_headers(request.headers(), &state.config) {
+    match auth::validate_headers(request.headers(), &state).await {
         Ok(ctx) => {
             request.extensions_mut().insert(ctx);
             next.run(request).await
@@ -114,11 +114,12 @@ pub async fn idempotency_middleware(
     next: Next,
 ) -> Response {
     let method = request.method().clone();
-    let path = request.uri().path().to_string();
 
-    if method != Method::POST || !path.starts_with("/v1/") {
+    if method != Method::POST {
         return next.run(request).await;
     }
+
+    let path = request.uri().path().to_string();
 
     let Some(key) = request
         .headers()
@@ -142,7 +143,10 @@ pub async fn idempotency_middleware(
             .into_response();
     };
 
-    if !state.register_idempotency_key(&key).await {
+    if !state
+        .register_idempotency_key(&key, method.as_str(), &path)
+        .await
+    {
         let request_id = request
             .extensions()
             .get::<RequestContext>()

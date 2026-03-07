@@ -11,7 +11,18 @@ pub struct PrRiskPolicy {
     allowed_decisions: HashSet<String>,
     auto_merge_confidence_min: f64,
     deny_reason_codes: HashSet<String>,
+    plan_governance: PlanGovernancePolicy,
     metadata: PolicyMetadata,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PlanGovernancePolicy {
+    pub require_objective: bool,
+    pub require_changes: bool,
+    pub require_risk: bool,
+    pub require_acceptance: bool,
+    pub require_how_to_test: bool,
+    pub require_backout: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -54,6 +65,10 @@ impl PrRiskPolicy {
 
     pub fn metadata(&self) -> &PolicyMetadata {
         &self.metadata
+    }
+
+    pub fn plan_governance(&self) -> &PlanGovernancePolicy {
+        &self.plan_governance
     }
 
     pub fn evaluate_cloud_decision(&self, decision: &CloudGateDecision) -> PolicyEvaluation {
@@ -132,6 +147,7 @@ impl PrRiskPolicy {
             deny_reason_codes: ["secrets_suspected".to_string(), "pii_suspected".to_string()]
                 .into_iter()
                 .collect(),
+            plan_governance: PlanGovernancePolicy::default_fail_closed(),
             metadata: PolicyMetadata {
                 version: "embedded-default".to_string(),
                 source_path: source_path.to_string(),
@@ -184,6 +200,10 @@ impl PrRiskPolicy {
             allowed_decisions,
             auto_merge_confidence_min,
             deny_reason_codes,
+            plan_governance: file
+                .plan_governance
+                .map(PlanGovernancePolicy::from_file)
+                .unwrap_or_else(PlanGovernancePolicy::default_fail_closed),
             metadata: PolicyMetadata {
                 version: file.version.unwrap_or_else(|| "unknown".to_string()),
                 source_path: source_path.to_string(),
@@ -210,6 +230,8 @@ struct PolicySetFile {
     #[serde(default)]
     defaults: Option<PolicyDefaults>,
     #[serde(default)]
+    plan_governance: Option<PlanGovernanceFile>,
+    #[serde(default)]
     global_rules: Vec<PolicyRule>,
     domains: PolicyDomains,
 }
@@ -218,6 +240,22 @@ struct PolicySetFile {
 struct PolicyDefaults {
     #[serde(default)]
     allowed_decisions: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlanGovernanceFile {
+    #[serde(default)]
+    require_objective: Option<bool>,
+    #[serde(default)]
+    require_changes: Option<bool>,
+    #[serde(default)]
+    require_risk: Option<bool>,
+    #[serde(default)]
+    require_acceptance: Option<bool>,
+    #[serde(default)]
+    require_how_to_test: Option<bool>,
+    #[serde(default)]
+    require_backout: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -253,6 +291,35 @@ struct RuleWhen {
     reason_codes_any: Option<Vec<String>>,
 }
 
+impl PlanGovernancePolicy {
+    pub fn default_fail_closed() -> Self {
+        Self {
+            require_objective: true,
+            require_changes: true,
+            require_risk: true,
+            require_acceptance: true,
+            require_how_to_test: true,
+            require_backout: true,
+        }
+    }
+
+    fn from_file(file: PlanGovernanceFile) -> Self {
+        let default = Self::default_fail_closed();
+        Self {
+            require_objective: file.require_objective.unwrap_or(default.require_objective),
+            require_changes: file.require_changes.unwrap_or(default.require_changes),
+            require_risk: file.require_risk.unwrap_or(default.require_risk),
+            require_acceptance: file
+                .require_acceptance
+                .unwrap_or(default.require_acceptance),
+            require_how_to_test: file
+                .require_how_to_test
+                .unwrap_or(default.require_how_to_test),
+            require_backout: file.require_backout.unwrap_or(default.require_backout),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{sha256_hex, CloudGateDecision, PolicySetFile, PrRiskPolicy};
@@ -275,6 +342,25 @@ mod tests {
         }"#;
         let parsed: PolicySetFile = serde_json::from_str(raw).expect("policy json");
         PrRiskPolicy::from_policy_file(parsed, "test-policy.json", Some(raw))
+    }
+
+    #[test]
+    fn reads_plan_governance_overrides_from_policy() {
+        let raw = r#"{
+          "version": "test",
+          "plan_governance": {
+            "require_backout": false,
+            "require_acceptance": true
+          },
+          "global_rules": [],
+          "domains": {}
+        }"#;
+        let file: PolicySetFile = serde_json::from_str(raw).expect("policy file");
+        let policy = PrRiskPolicy::from_policy_file(file, "test.json", Some(raw));
+        let plan = policy.plan_governance();
+        assert!(plan.require_acceptance);
+        assert!(!plan.require_backout);
+        assert!(plan.require_how_to_test);
     }
 
     #[test]

@@ -4802,6 +4802,60 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    fn sign_hs256_jwt(secret: &str, claims: serde_json::Value) -> String {
+        jsonwebtoken::encode(
+            &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .expect("jwt")
+    }
+
+    #[test]
+    fn service_jwt_requires_matching_scope_when_configured() {
+        let token = sign_hs256_jwt(
+            "jwt-secret",
+            json!({
+                "sub": "code247",
+                "role": "service",
+                "tenant_id": "voulezvous",
+                "scope": "code247:intentions:write",
+                "exp": 4_102_444_800u64
+            }),
+        );
+        let config = SupabaseConfig {
+            jwt_secret: Some("jwt-secret".into()),
+            required_service_scope: Some("llm:invoke".into()),
+            ..SupabaseConfig::default()
+        };
+
+        let identity = try_supabase_jwt(&token, &config);
+        assert!(identity.is_none(), "service jwt with wrong scope must fail");
+    }
+
+    #[test]
+    fn service_jwt_accepts_matching_scope_when_configured() {
+        let token = sign_hs256_jwt(
+            "jwt-secret",
+            json!({
+                "sub": "code247",
+                "role": "service",
+                "tenant_id": "voulezvous",
+                "scope": "llm:invoke code247:intentions:write",
+                "exp": 4_102_444_800u64
+            }),
+        );
+        let config = SupabaseConfig {
+            jwt_secret: Some("jwt-secret".into()),
+            required_service_scope: Some("llm:invoke".into()),
+            ..SupabaseConfig::default()
+        };
+
+        let identity = try_supabase_jwt(&token, &config).expect("identity");
+        assert_eq!(identity.tenant_id.as_deref(), Some("voulezvous"));
+        assert_eq!(identity.app_id.as_deref(), Some("code247"));
+    }
+
     #[tokio::test]
     async fn build_route_candidates_code_local_first_premium_fallback() {
         let config = Config {

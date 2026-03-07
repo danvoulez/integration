@@ -7,7 +7,7 @@
 ## 1) Backlog Ativo (somente pendências)
 
 ### 1.1 P0 - Bloqueios para Code247 aceitar carga séria
-- [ ] C247-RDY-001: Fechar authn/authz completo em `/intentions*`, `/jobs`, webhooks e workers com JWT + project scope (substituir token único legado).
+- [x] C247-RDY-001: Fechar authn/authz completo em `/intentions*`, `/jobs`, webhooks e workers com JWT + project scope (substituir token único legado).
 - [ ] C247-RDY-007: Ativar merge queue (`merge_group`) em repositórios críticos para evitar green-on-stale.
 - [ ] C247-RDY-008: Tornar security scan obrigatório para repos críticos antes de merge substantial.
 - [x] C247-RDY-011: Expor telemetria de latência/custo por etapa (`plan/code/review/ci/merge/deploy`) no obs-api.
@@ -21,13 +21,15 @@
 - [ ] G-030: Alinhar contratos OpenAPI com topologia canônica (remover drift de host/porta, ex.: `edge-control` localhost `8080` vs runtime `18080`).
 
 ### 1.3 P0 - edge-control produção distribuída
-Sem pendências abertas nesta frente; próximo gate é validar multi-instance em `TST-011`.
+- [ ] ECTRL-001: Evitar crescimento não limitado de `rate_buckets` (normalizar chave por identidade e adicionar eviction/TTL).
+- [ ] ECTRL-002: Diferenciar falha de backend de idempotência vs request duplicada (não retornar `409 duplicate_request` em erro de storage/RPC).
+- [ ] ECTRL-003: Introduzir cache de JWKS + timeout explícito no client HTTP para validação JWT (reduzir dependência de rede por request).
 
 ### 1.4 P1 - Fuel econômico e homeostase (backend)
 Sem pendências abertas nesta frente.
 
 ### 1.5 P1 - LLM Gateway (pendências reais)
-- [ ] LLM-012: Rodar smoke autenticado em CI cobrindo fluxos JWT e compat mode até sunset completo.
+- [x] LLM-012: Rodar smoke autenticado em CI cobrindo fluxos JWT e compat mode até sunset completo.
 
 ### 1.6 P1 - Logic / CLI (pendências reais)
 - [ ] LOGIC-013: Estender o relatório operacional consolidado com round-trip por intenção quando `OBS-001` estiver disponível.
@@ -35,6 +37,11 @@ Sem pendências abertas nesta frente.
 ### 1.7 P1 - Obs API (backend, sem UI nova)
 - [ ] OBS-001: Expor backend de round-trip por intenção (`intake`, `linear`, `ci`, `pr`, `merge`, `deploy`) para consumo futuro da UI.
 - [ ] OBS-002: Fechar alertas de `stuck job`, `stale intention` e `sync failure` com ack/resolution auditável.
+- [ ] OBS-003: Harden `cli/auth/challenge*` para não expor `session_token`/dados sensíveis sem auth e sanitizar payload de status.
+- [ ] OBS-004: Validar fluxo de aprovação de challenge (`pending`, `expires_at`, single-use, replay protection) antes de emitir sessão.
+- [ ] OBS-005: Exigir membership tenant/app em `/api/v1/apps/:appId/keys/user` (read/write) para bloquear escrita cross-tenant por usuário autenticado.
+- [ ] OBS-006: Revisar `POST /api/v1/auth/tenant/resolve` para evitar enumeração de tenant (auth obrigatória ou resposta minimizada/rate-limited).
+- [ ] OBS-007: Endurecer criação de challenge CLI (`expires_at` server-side com clamp + rate limit/abuse controls + cleanup de expirados).
 
 ### 1.8 P2 - Onboarding ecossistema (depois do core estável)
 - [ ] VVC-001: Publicar intentions + sync + linkage no fluxo padrão (`voulezvous-tv-codex`).
@@ -58,7 +65,7 @@ Sem pendências abertas nesta frente.
 **Escopo:** `code247.logline.world/*`, `edge-control.logline.world/*` (+ ajustes mínimos em contrato quando necessário)  
 **Objetivo:** tornar Code247 e o control-plane aptos para execução contínua com segurança operacional.
 
-- [ ] A-001: `C247-RDY-001` JWT+scope completo nas rotas críticas.
+- [x] A-001: `C247-RDY-001` JWT+scope completo nas rotas críticas.
 - [ ] A-005: `C247-RDY-007/008` merge queue + security scan obrigatório para repos críticos.
 - [x] A-007: `C247-RDY-012` timeline operacional do `Code247` validada no obs-api (telemetria de etapa exposta em `/api/v1/code247/stage-telemetry`).
 
@@ -80,7 +87,7 @@ Sem pendências abertas no escopo do Agent B.
 - [ ] C-002: `G-004` auth service-to-service unificada (JWT + escopo de projeto) em todos os serviços centrais.
 - [ ] C-003: `G-030` alinhar contratos OpenAPI com topologia canônica e remover drift de host/porta.
 - [ ] C-004: `OBS-001` backend de round-trip por intenção para consumo futuro da UI.
-- [ ] C-006: `LLM-012` smoke autenticado do gateway cobrindo JWT e compat mode até sunset.
+- [x] C-006: `LLM-012` smoke autenticado do gateway cobrindo JWT e compat mode até sunset.
 
 **DoD Agent C:** execução de ponta a ponta acionável por um comando, com relatório auditável.
 
@@ -90,6 +97,8 @@ Sem pendências abertas no escopo do Agent B.
 - [ ] TST-011: validar `edge-control` com JWKS real + idempotência persistente em cenário restart/multi-instance.
 - [ ] TST-012: falha/intermitência de Linear/GitHub preserva timeline, fila assíncrona e sinais operacionais do Code247.
 - [ ] TST-013: `policy_version` segmentada por tenant/app não mistura cálculo de Fuel entre tenants.
+- [ ] TST-014: validar security regressions do `obs-api` (`cli challenge` sem leakage/replay e `user keys` com membership enforcement estrito).
+- [ ] TST-015: validar que `tenant/resolve` não permite enumeração indevida e que criação de challenge aplica TTL/rate-limit server-side.
 
 ### 3.2 Gate incremental
 - [ ] TST-GATE-004: qualquer mudança em `Code247 timeline`, `edge-control auth/idempotency` ou `Fuel policy_version` deve adicionar teste severo correspondente.
@@ -146,11 +155,13 @@ Status atual (2026-03-06): `./scripts/integration-severe.sh` segue verde no base
 - [x] Policy engine com `policy-set.v1.1.json` e emissão de `GateDecision.v1` integrado ao fluxo.
 - [x] JWT via JWKS real, contract tests dos handlers críticos e resilience layer downstream habilitados.
 - [x] Idempotência persistida em backend compartilhado via Supabase RPC, com fallback SQLite apenas para dev/teste local.
+- [x] Orquestração `edge-control -> Code247` migrou do bearer estático para JWT service-to-service curto com `scope` + `code247_projects`, mantendo `CODE247_INTENTIONS_TOKEN` apenas como fallback legado.
 
 ### LLM Gateway
 - [x] Redução adicional de latência local com alvo operacional por modo.
 - [x] Envelope padrão aplicado nos endpoints JSON e erros canônicos.
 - [x] Compatibilidade controlada entre API key legado e JWT Supabase com trilha de sunset.
+- [x] Smoke autenticado do gateway versionado e plugado em CI, cobrindo JWT service token, compat mode legado e bloqueio explícito quando legacy está `disabled`.
 - [x] Persistência normalizada em `llm_requests` com provider/model/mode.
 - [x] Contrato formal gateway -> Code247 publicado.
 - [x] Fuel Supabase tornado fonte primária, sem dependência operacional de SQLite local.

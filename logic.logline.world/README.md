@@ -40,6 +40,7 @@ logline cicd run --pipeline integration-severe # Smoke+contracts+severe suite + 
 logline harness intentions generate --root ..  # Generate canonical manifest.intentions.json
 logline harness intentions publish --root ..   # Publish intentions + update linear-meta linkage
 logline harness run --root ..                  # Unified severe integration command
+../scripts/verify-operations.sh                # Official ecosystem verification entrypoint
 logline db verify-rls            # RLS policy verification gate
 logline migrate review           # Schema diff before applying migrations
 logline migrate apply --env prod # Apply migrations (requires review)

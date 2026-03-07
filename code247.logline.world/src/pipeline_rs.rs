@@ -4,7 +4,8 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tracing::warn;
 
 use crate::{
@@ -14,12 +15,16 @@ use crate::{
     file_writer_rs::FileWriter,
     persistence_rs::{
         CheckpointStore, EvidenceStore, ExecutionLogger, Job, JobStatus, JobsRepository,
+        LinearOutboxRepository,
     },
-    policy_gate_rs::PrRiskPolicy,
+    policy_gate_rs::{PlanGovernancePolicy, PolicyEvaluation, PrRiskPolicy},
     pr_creator_rs::PrCreator,
     risk_classifier_rs::{MergeMode, RiskClassifier},
     state_machine_rs::StateMachine,
     test_runner_rs::TestRunner,
+    transition_guard_rs::{
+        classify_linear_workflow_state, is_linear_transition_allowed, LinearWorkflowState,
+    },
 };
 
 pub struct Pipeline {
@@ -36,10 +41,18 @@ pub struct Pipeline {
     context_builder: ContextBuilder,
     test_runner: TestRunner,
     pr_policy: PrRiskPolicy,
+    linear_outbox: Arc<Mutex<LinearOutboxRepository>>,
     pr_creator: Option<PrCreator>,
     max_review_iterations: u8,
+    lease_owner: String,
+    planning_timeout_seconds: i64,
+    coding_timeout_seconds: i64,
+    reviewing_timeout_seconds: i64,
+    validating_timeout_seconds: i64,
+    committing_timeout_seconds: i64,
     linear_in_progress_state_name: String,
     linear_ready_for_release_state_name: String,
+    linear_done_state_type: String,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +79,42 @@ impl PlanGovernanceEvidence {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum MergePolicyOverrideAction {
+    AllowAutoMerge,
+    ForceManualReview,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct MergePolicyOverride {
+    action: MergePolicyOverrideAction,
+    actor: String,
+    reason: String,
+    ticket: Option<String>,
+    source: Option<String>,
+    approved_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum MergePolicyResolution {
+    AutoMerge,
+    ManualReview,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct MergePolicyDecision {
+    merge_mode: String,
+    risk_score: u8,
+    auto_merge_allowed: bool,
+    resolution: MergePolicyResolution,
+    reason: String,
+    override_applied: Option<MergePolicyOverride>,
+    cloud_gate: Option<CloudGateDecision>,
+    cloud_policy: Option<PolicyEvaluation>,
+}
+
 fn markdown_bullets(items: &[String]) -> String {
     if items.is_empty() {
         "- (none)".to_string()
@@ -78,7 +127,10 @@ fn markdown_bullets(items: &[String]) -> String {
     }
 }
 
-fn validate_plan_governance(plan: &str) -> Result<PlanGovernanceEvidence> {
+fn validate_plan_governance(
+    plan: &str,
+    policy: &PlanGovernancePolicy,
+) -> Result<PlanGovernanceEvidence> {
     let normalized = plan.to_ascii_lowercase();
     let objective_present = contains_any(&normalized, &["objetivo", "goal"]);
     let changes_present = contains_any(&normalized, &["mudanças", "mudancas", "changes"]);
@@ -106,22 +158,22 @@ fn validate_plan_governance(plan: &str) -> Result<PlanGovernanceEvidence> {
     let backout = extract_section_items(plan, &["backout", "rollback"]);
 
     let mut missing = Vec::new();
-    if !objective_present {
+    if policy.require_objective && !objective_present {
         missing.push("objetivo/goal");
     }
-    if !changes_present {
+    if policy.require_changes && !changes_present {
         missing.push("mudanças/changes");
     }
-    if !risk_present {
+    if policy.require_risk && !risk_present {
         missing.push("risco/risk");
     }
-    if acceptance.is_empty() {
+    if policy.require_acceptance && acceptance.is_empty() {
         missing.push("acceptance criteria");
     }
-    if how_to_test.is_empty() {
+    if policy.require_how_to_test && how_to_test.is_empty() {
         missing.push("how-to-test");
     }
-    if backout.is_empty() {
+    if policy.require_backout && backout.is_empty() {
         missing.push("backout/rollback");
     }
 
@@ -140,6 +192,142 @@ fn validate_plan_governance(plan: &str) -> Result<PlanGovernanceEvidence> {
         how_to_test,
         backout,
     })
+}
+
+fn parse_merge_policy_override(payload: &str) -> Option<MergePolicyOverride> {
+    let value = serde_json::from_str::<Value>(payload).ok()?;
+    let raw = value
+        .pointer("/merge_policy/override")
+        .or_else(|| value.pointer("/controls/merge_policy/override"))?
+        .clone();
+    let mut parsed = serde_json::from_value::<MergePolicyOverride>(raw).ok()?;
+    parsed.actor = parsed.actor.trim().to_string();
+    parsed.reason = parsed.reason.trim().to_string();
+    parsed.ticket = parsed
+        .ticket
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    parsed.source = parsed
+        .source
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    parsed.approved_at = parsed
+        .approved_at
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if parsed.actor.is_empty() || parsed.reason.is_empty() {
+        return None;
+    }
+    Some(parsed)
+}
+
+fn resolve_merge_policy_decision(
+    payload: &str,
+    risk: &crate::risk_classifier_rs::RiskAssessment,
+    cloud_gate: Option<&CloudGateDecision>,
+    policy: &PrRiskPolicy,
+) -> MergePolicyDecision {
+    let override_request = parse_merge_policy_override(payload);
+    let cloud_policy = cloud_gate.map(|decision| policy.evaluate_cloud_decision(decision));
+    let merge_mode = match risk.merge_mode {
+        MergeMode::Light => "light",
+        MergeMode::Substantial => "substantial",
+    }
+    .to_string();
+
+    if let Some(override_request) = override_request.clone() {
+        match override_request.action {
+            MergePolicyOverrideAction::ForceManualReview => {
+                return MergePolicyDecision {
+                    merge_mode,
+                    risk_score: risk.score,
+                    auto_merge_allowed: false,
+                    resolution: MergePolicyResolution::ManualReview,
+                    reason: format!(
+                        "manual review forced by override from '{}' ({})",
+                        override_request.actor, override_request.reason
+                    ),
+                    override_applied: Some(override_request),
+                    cloud_gate: cloud_gate.cloned(),
+                    cloud_policy,
+                };
+            }
+            MergePolicyOverrideAction::AllowAutoMerge => {
+                if risk.merge_mode == MergeMode::Substantial
+                    && cloud_policy.as_ref().is_some_and(|eval| !eval.allowed)
+                {
+                    return MergePolicyDecision {
+                        merge_mode,
+                        risk_score: risk.score,
+                        auto_merge_allowed: true,
+                        resolution: MergePolicyResolution::AutoMerge,
+                        reason: format!(
+                            "substantial auto-merge override approved by '{}' ({})",
+                            override_request.actor, override_request.reason
+                        ),
+                        override_applied: Some(override_request),
+                        cloud_gate: cloud_gate.cloned(),
+                        cloud_policy,
+                    };
+                }
+            }
+        }
+    }
+
+    match risk.merge_mode {
+        MergeMode::Light => MergePolicyDecision {
+            merge_mode,
+            risk_score: risk.score,
+            auto_merge_allowed: true,
+            resolution: MergePolicyResolution::AutoMerge,
+            reason: "light merge eligible by default policy".to_string(),
+            override_applied: None,
+            cloud_gate: None,
+            cloud_policy: None,
+        },
+        MergeMode::Substantial => {
+            if let Some(policy_eval) = cloud_policy.clone() {
+                if policy_eval.allowed {
+                    MergePolicyDecision {
+                        merge_mode,
+                        risk_score: risk.score,
+                        auto_merge_allowed: true,
+                        resolution: MergePolicyResolution::AutoMerge,
+                        reason: "substantial merge approved by cloud gate policy".to_string(),
+                        override_applied: None,
+                        cloud_gate: cloud_gate.cloned(),
+                        cloud_policy: Some(policy_eval),
+                    }
+                } else {
+                    MergePolicyDecision {
+                        merge_mode,
+                        risk_score: risk.score,
+                        auto_merge_allowed: false,
+                        resolution: MergePolicyResolution::ManualReview,
+                        reason: format!(
+                            "substantial merge blocked by cloud gate policy: {}",
+                            policy_eval.reason
+                        ),
+                        override_applied: None,
+                        cloud_gate: cloud_gate.cloned(),
+                        cloud_policy: Some(policy_eval),
+                    }
+                }
+            } else {
+                MergePolicyDecision {
+                    merge_mode,
+                    risk_score: risk.score,
+                    auto_merge_allowed: false,
+                    resolution: MergePolicyResolution::ManualReview,
+                    reason: "substantial merge requires cloud gate decision".to_string(),
+                    override_applied: None,
+                    cloud_gate: None,
+                    cloud_policy: None,
+                }
+            }
+        }
+    }
 }
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {
@@ -251,10 +439,18 @@ impl Pipeline {
         context_builder: ContextBuilder,
         test_runner: TestRunner,
         pr_policy: PrRiskPolicy,
+        linear_outbox: Arc<Mutex<LinearOutboxRepository>>,
         pr_creator: Option<PrCreator>,
         max_review_iterations: u8,
+        lease_owner: String,
+        planning_timeout_seconds: i64,
+        coding_timeout_seconds: i64,
+        reviewing_timeout_seconds: i64,
+        validating_timeout_seconds: i64,
+        committing_timeout_seconds: i64,
         linear_in_progress_state_name: String,
         linear_ready_for_release_state_name: String,
+        linear_done_state_type: String,
     ) -> Self {
         Self {
             jobs,
@@ -270,10 +466,18 @@ impl Pipeline {
             context_builder,
             test_runner,
             pr_policy,
+            linear_outbox,
             pr_creator,
             max_review_iterations,
+            lease_owner,
+            planning_timeout_seconds,
+            coding_timeout_seconds,
+            reviewing_timeout_seconds,
+            validating_timeout_seconds,
+            committing_timeout_seconds,
             linear_in_progress_state_name,
             linear_ready_for_release_state_name,
+            linear_done_state_type,
         }
     }
 
@@ -292,6 +496,8 @@ impl Pipeline {
             return Ok(());
         }
 
+        self.transition(&mut job, JobStatus::Planning)?;
+
         let planning_prompt = self
             .context_builder
             .build_planning_prompt(&job.issue_id, &job.payload)
@@ -302,7 +508,7 @@ impl Pipeline {
             .branch_manager
             .create_job_branch(&issue.identifier)
             .await?;
-        self.comment_linear_best_effort(
+        self.queue_linear_comment(
             &issue.id,
             format!(
                 "`code247:running` run_id=`{}` branch=`{}` status=`planning`",
@@ -310,15 +516,13 @@ impl Pipeline {
             ),
         )
         .await;
-        self.move_linear_state_by_name_best_effort(&issue.id, &self.linear_in_progress_state_name)
-            .await;
-
-        self.transition(&mut job, JobStatus::Planning)?;
+        self.queue_linear_state_transition(&issue.id, &self.linear_in_progress_state_name)
+            .await?;
         let plan = if let Some(saved) = self.checkpoint("PLANNING", &job.id) {
             saved
         } else {
             let generated = self
-                .measure_and_log(&job.id, "plan", "llm-gateway:genius", || {
+                .measure_and_log(&job.id, job.status, "plan", "llm-gateway:genius", || {
                     self.llm.plan(&planning_prompt)
                 })
                 .await?;
@@ -329,21 +533,22 @@ impl Pipeline {
             generated
         };
         self.evidence.write(&job.id, "plan", &plan)?;
-        let governance_plan = match validate_plan_governance(&plan) {
-            Ok(value) => value,
-            Err(err) => {
-                self.comment_linear_best_effort(
-                    &issue.id,
-                    format!(
-                        "`code247:plan-invalid` run_id=`{}` reason=`{}`",
-                        job.id,
-                        err.to_string().replace('`', "'")
-                    ),
-                )
-                .await;
-                return Err(err);
-            }
-        };
+        let governance_plan =
+            match validate_plan_governance(&plan, self.pr_policy.plan_governance()) {
+                Ok(value) => value,
+                Err(err) => {
+                    self.queue_linear_comment(
+                        &issue.id,
+                        format!(
+                            "`code247:plan-invalid` run_id=`{}` reason=`{}`",
+                            job.id,
+                            err.to_string().replace('`', "'")
+                        ),
+                    )
+                    .await;
+                    return Err(err);
+                }
+            };
         self.evidence.write(
             &job.id,
             "plan_contract",
@@ -383,7 +588,9 @@ impl Pipeline {
             saved
         } else {
             let generated = self
-                .measure_and_log(&job.id, "code", "llm-gateway:code", || self.llm.code(&plan))
+                .measure_and_log(&job.id, job.status, "code", "llm-gateway:code", || {
+                    self.llm.code(&plan)
+                })
                 .await?;
             self.checkpoints
                 .lock()
@@ -395,7 +602,7 @@ impl Pipeline {
 
         self.transition(&mut job, JobStatus::Reviewing)?;
         let mut review = self
-            .measure_and_log(&job.id, "review", "llm-gateway:genius", || {
+            .measure_and_log(&job.id, job.status, "review", "llm-gateway:genius", || {
                 self.llm.review(&code)
             })
             .await?;
@@ -403,16 +610,60 @@ impl Pipeline {
         let mut iteration = 0;
         while !review.issues.is_empty() && iteration < self.max_review_iterations {
             code = self
-                .measure_and_log(&job.id, "recoding", "llm-gateway:code", || {
+                .measure_and_log(&job.id, job.status, "recoding", "llm-gateway:code", || {
                     self.llm.code(&review.code)
                 })
                 .await?;
             review = self
-                .measure_and_log(&job.id, "rereview", "llm-gateway:genius", || {
-                    self.llm.review(&code)
-                })
+                .measure_and_log(
+                    &job.id,
+                    job.status,
+                    "rereview",
+                    "llm-gateway:genius",
+                    || self.llm.review(&code),
+                )
                 .await?;
             iteration += 1;
+        }
+        if !review.issues.is_empty() {
+            let exhausted_payload = json!({
+                "event": "REVIEW_LOOP_EXHAUSTED",
+                "run_id": job.id,
+                "iteration": iteration,
+                "remaining_issues": review.issues,
+                "summary": review.summary,
+            });
+            self.evidence.write(
+                &job.id,
+                "review_loop_exhausted",
+                &serde_json::to_string_pretty(&exhausted_payload)?,
+            )?;
+            self.execution_logger
+                .lock()
+                .expect("logger lock")
+                .log_stage(
+                    &job.id,
+                    "review_loop_exhausted",
+                    "(review loop)",
+                    &serde_json::to_string(&exhausted_payload)?,
+                    "llm-gateway:genius",
+                    0,
+                );
+            self.queue_linear_comment(
+                &issue.id,
+                format!(
+                    "`code247:review-loop-exhausted` event=`REVIEW_LOOP_EXHAUSTED` run_id=`{}` iteration=`{}` remaining_issues=`{}`",
+                    job.id,
+                    iteration,
+                    review.issues.len()
+                ),
+            )
+            .await;
+            bail!(
+                "review loop exhausted after {} iteration(s); remaining issues: {}",
+                iteration,
+                review.issues.len()
+            );
         }
 
         self.evidence
@@ -428,7 +679,7 @@ impl Pipeline {
             &serde_json::to_string_pretty(&validation)?,
         )?;
         if validation.red_main_blocked {
-            self.comment_linear_best_effort(
+            self.queue_linear_comment(
                 &issue.id,
                 format!(
                     "`code247:red-main` run_id=`{}` status=`blocked` reason=`main-not-green`",
@@ -438,7 +689,7 @@ impl Pipeline {
             .await;
         }
         if validation.flaky_recovered {
-            self.comment_linear_best_effort(
+            self.queue_linear_comment(
                 &issue.id,
                 format!(
                     "`code247:ci-flaky` run_id=`{}` status=`recovered-after-rerun`",
@@ -471,7 +722,7 @@ impl Pipeline {
             );
         let diff_lines = self.git.diff_lines_for_commit(&commit.sha).await?;
         let risk = RiskClassifier::classify(&files, diff_lines);
-        self.comment_linear_best_effort(
+        self.queue_linear_comment(
             &issue.id,
             format!(
                 "`code247:plan` run_id=`{}` merge_mode=`{:?}` risk_score=`{}` diff_lines=`{}` changed_files=`{}`",
@@ -513,9 +764,13 @@ impl Pipeline {
                 "validation": validation,
             });
             let decision = self
-                .measure_and_log(&job.id, "cloud_gate", "llm-gateway:genius", || {
-                    self.llm.cloud_pr_risk_decision(context.clone())
-                })
+                .measure_and_log(
+                    &job.id,
+                    job.status,
+                    "cloud_gate",
+                    "llm-gateway:genius",
+                    || self.llm.cloud_pr_risk_decision(context.clone()),
+                )
                 .await?;
             self.evidence.write(
                 &job.id,
@@ -526,7 +781,53 @@ impl Pipeline {
         } else {
             None
         };
-        let cloud_approved = cloud_gate.as_ref().is_some_and(CloudGateDecision::is_yes);
+        let merge_policy = resolve_merge_policy_decision(
+            &job.payload,
+            &risk,
+            cloud_gate.as_ref(),
+            &self.pr_policy,
+        );
+        self.evidence.write(
+            &job.id,
+            "merge_policy_decision",
+            &serde_json::to_string_pretty(&merge_policy)?,
+        )?;
+        self.execution_logger
+            .lock()
+            .expect("logger lock")
+            .log_stage(
+                &job.id,
+                "merge_policy",
+                &serde_json::to_string(&json!({
+                    "merge_mode": merge_policy.merge_mode,
+                    "risk_score": merge_policy.risk_score,
+                    "override_requested": merge_policy.override_applied.is_some(),
+                }))?,
+                &serde_json::to_string(&merge_policy)?,
+                "policy/merge:v1",
+                0,
+            );
+        if let Some(policy_eval) = merge_policy.cloud_policy.as_ref() {
+            self.evidence.write(
+                &job.id,
+                "cloud_gate_policy",
+                &serde_json::to_string_pretty(policy_eval)?,
+            )?;
+        }
+        if let Some(override_request) = merge_policy.override_applied.as_ref() {
+            self.queue_linear_comment(
+                &issue.id,
+                format!(
+                    "`code247:merge-override` run_id=`{}` action=`{:?}` actor=`{}` ticket=`{}` reason=`{}`",
+                    job.id,
+                    override_request.action,
+                    override_request.actor,
+                    override_request.ticket.as_deref().unwrap_or("-"),
+                    override_request.reason.replace('`', "'"),
+                ),
+            )
+            .await;
+        }
         let mut pre_merge_required = vec![
             "plan",
             "plan_contract",
@@ -537,6 +838,7 @@ impl Pipeline {
             "review",
             "validation",
             "risk",
+            "merge_policy_decision",
         ];
         if risk.merge_mode == MergeMode::Substantial {
             pre_merge_required.push("cloud_gate");
@@ -562,7 +864,7 @@ impl Pipeline {
         let (number, url) = pr_creator
             .create(&job, &issue, &review_for_pr, &branch, &files, &risk)
             .await?;
-        self.comment_linear_best_effort(
+        self.queue_linear_comment(
             &issue.id,
             format!(
                 "`code247:pr-opened` run_id=`{}` pr=`#{}` {}",
@@ -597,9 +899,18 @@ impl Pipeline {
             ],
         )
         .await?;
-        let merge = pr_creator
-            .auto_merge_when_ready(number, &risk, cloud_approved)
-            .await?;
+        let merge = if merge_policy.auto_merge_allowed {
+            pr_creator
+                .auto_merge_when_ready(number, &risk, true)
+                .await?
+        } else {
+            crate::pr_creator_rs::AutoMergeOutcome {
+                attempted: false,
+                merged: false,
+                reason: merge_policy.reason.clone(),
+                merge_commit_sha: None,
+            }
+        };
         self.evidence.write(
             &job.id,
             "merge",
@@ -608,6 +919,8 @@ impl Pipeline {
                 "merged": merge.merged,
                 "reason": merge.reason,
                 "merge_commit_sha": merge.merge_commit_sha,
+                "merge_policy_resolution": merge_policy.resolution,
+                "merge_policy_override": merge_policy.override_applied,
                 "policy_version": policy_meta.version,
                 "policy_sha256": policy_meta.source_sha256,
                 "policy_path": policy_meta.source_path,
@@ -625,6 +938,8 @@ impl Pipeline {
                     "merged": merge.merged,
                     "reason": merge.reason,
                     "merge_commit_sha": merge.merge_commit_sha,
+                    "merge_policy_resolution": merge_policy.resolution,
+                    "merge_policy_override": merge_policy.override_applied,
                     "policy_version": policy_meta.version,
                     "policy_sha256": policy_meta.source_sha256,
                     "policy_path": policy_meta.source_path,
@@ -635,8 +950,19 @@ impl Pipeline {
 
         match risk.merge_mode {
             MergeMode::Light => {
+                if !merge_policy.auto_merge_allowed {
+                    self.queue_linear_comment(
+                        &issue.id,
+                        format!(
+                            "`code247:needs-human` run_id=`{}` reason=`light-manual-review` detail=`{}`",
+                            job.id, merge_policy.reason
+                        ),
+                    )
+                    .await;
+                    bail!("light PR requires manual review: {}", merge_policy.reason);
+                }
                 if !merge.merged {
-                    self.comment_linear_best_effort(
+                    self.queue_linear_comment(
                         &issue.id,
                         format!(
                             "`code247:needs-human` run_id=`{}` reason=`light-merge-failed` detail=`{}`",
@@ -651,30 +977,33 @@ impl Pipeline {
                 }
             }
             MergeMode::Substantial => {
-                let decision =
-                    cloud_gate.ok_or_else(|| anyhow!("cloud gate ausente para PR substantial"))?;
-                let policy_eval = self.pr_policy.evaluate_cloud_decision(&decision);
-                self.evidence.write(
-                    &job.id,
-                    "cloud_gate_policy",
-                    &serde_json::to_string_pretty(&policy_eval)?,
-                )?;
-                if !policy_eval.allowed {
-                    self.comment_linear_best_effort(
-                        &issue.id,
-                        format!(
-                            "`code247:needs-cloud-review` run_id=`{}` decision=`{}` reason=`{}`",
-                            job.id, policy_eval.cloud_decision, policy_eval.reason
-                        ),
-                    )
-                    .await;
+                if !merge_policy.auto_merge_allowed {
+                    if let Some(policy_eval) = merge_policy.cloud_policy.as_ref() {
+                        self.queue_linear_comment(
+                            &issue.id,
+                            format!(
+                                "`code247:needs-cloud-review` run_id=`{}` decision=`{}` reason=`{}`",
+                                job.id, policy_eval.cloud_decision, policy_eval.reason
+                            ),
+                        )
+                        .await;
+                    } else {
+                        self.queue_linear_comment(
+                            &issue.id,
+                            format!(
+                                "`code247:needs-human` run_id=`{}` reason=`substantial-manual-review` detail=`{}`",
+                                job.id, merge_policy.reason
+                            ),
+                        )
+                        .await;
+                    }
                     bail!(
-                        "substantial PR bloqueado pela policy cloud gate: {}",
-                        policy_eval.reason
+                        "substantial PR blocked before auto-merge: {}",
+                        merge_policy.reason
                     );
                 }
                 if !merge.merged {
-                    self.comment_linear_best_effort(
+                    self.queue_linear_comment(
                         &issue.id,
                         format!(
                             "`code247:needs-human` run_id=`{}` reason=`substantial-merge-failed` detail=`{}`",
@@ -734,7 +1063,7 @@ impl Pipeline {
             &pre_state_required,
         )
         .await?;
-        self.comment_linear_best_effort(
+        self.queue_linear_comment(
             &issue.id,
             format!(
                 "`code247:validated` run_id=`{}` pr=`#{}` merged=`true` merge_commit_sha=`{}` rollback_chain_id=`{}` target_state=`{}`",
@@ -746,11 +1075,8 @@ impl Pipeline {
             ),
         )
         .await;
-        self.move_linear_state_by_name_best_effort(
-            &issue.id,
-            &self.linear_ready_for_release_state_name,
-        )
-        .await;
+        self.queue_linear_state_transition(&issue.id, &self.linear_ready_for_release_state_name)
+            .await?;
 
         self.transition(&mut job, JobStatus::Done)?;
         Ok(())
@@ -770,10 +1096,26 @@ impl Pipeline {
         if !self.fsm.can_transition(job.status, to) {
             return Err(anyhow!("Invalid transition {:?} -> {:?}", job.status, to));
         }
-        self.jobs
+        let changed = self
+            .jobs
             .lock()
             .expect("jobs lock")
-            .update_status(&job.id, to, None);
+            .transition_status_with_lease(
+                &job.id,
+                job.status,
+                to,
+                None,
+                Some(&self.lease_owner),
+                self.stage_timeout_seconds(to),
+            );
+        if !changed {
+            return Err(anyhow!(
+                "job {} lost stage state/lease while transitioning {:?} -> {:?}",
+                job.id,
+                job.status,
+                to
+            ));
+        }
         job.status = to;
         Ok(())
     }
@@ -781,6 +1123,7 @@ impl Pipeline {
     async fn measure_and_log<T, F, Fut>(
         &self,
         job_id: &str,
+        current_status: JobStatus,
         stage: &str,
         model: &str,
         f: F,
@@ -804,16 +1147,44 @@ impl Pipeline {
                 model,
                 duration,
             );
+        if current_status.has_stage_lease() {
+            let renewed = self.jobs.lock().expect("jobs lock").renew_stage_lease(
+                job_id,
+                current_status,
+                &self.lease_owner,
+                self.stage_timeout_seconds(current_status).unwrap_or(300),
+            );
+            if !renewed {
+                bail!(
+                    "job {} perdeu lease da etapa {:?} durante '{}'",
+                    job_id,
+                    current_status,
+                    stage
+                );
+            }
+        }
         Ok(result)
     }
 
-    async fn comment_linear_best_effort(&self, issue_id: &str, body: String) {
-        if let Err(err) = self.linear.create_comment(issue_id, &body).await {
-            warn!(
-                issue_id = %issue_id,
-                error = %err,
-                "failed to post pipeline status comment to Linear"
-            );
+    fn stage_timeout_seconds(&self, status: JobStatus) -> Option<i64> {
+        match status {
+            JobStatus::Planning => Some(self.planning_timeout_seconds),
+            JobStatus::Coding => Some(self.coding_timeout_seconds),
+            JobStatus::Reviewing => Some(self.reviewing_timeout_seconds),
+            JobStatus::Validating => Some(self.validating_timeout_seconds),
+            JobStatus::Committing => Some(self.committing_timeout_seconds),
+            _ => None,
+        }
+    }
+
+    async fn queue_linear_comment(&self, issue_id: &str, body: String) {
+        if let Err(err) = self
+            .linear_outbox
+            .lock()
+            .expect("linear outbox lock")
+            .enqueue(issue_id, "comment", &json!({ "body": body }))
+        {
+            warn!(issue_id=%issue_id, error=%err, "failed to enqueue linear comment");
         }
     }
 
@@ -828,7 +1199,7 @@ impl Pipeline {
         if missing.is_empty() {
             return Ok(());
         }
-        self.comment_linear_best_effort(
+        self.queue_linear_comment(
             issue_id,
             format!(
                 "`code247:evidence-missing` run_id=`{}` gate=`{}` missing=`{}`",
@@ -845,38 +1216,59 @@ impl Pipeline {
         );
     }
 
-    async fn move_linear_state_by_name_best_effort(&self, issue_id: &str, state_name: &str) {
+    async fn queue_linear_state_transition(&self, issue_id: &str, state_name: &str) -> Result<()> {
         let target_name = state_name.trim();
         if target_name.is_empty() {
-            return;
+            return Ok(());
         }
-        let state_id = match self.linear.find_state_id_by_name(target_name).await {
-            Ok(value) => value,
-            Err(err) => {
-                warn!(
-                    issue_id = %issue_id,
-                    state_name = %target_name,
-                    error = %err,
-                    "failed to resolve Linear state name"
-                );
-                return;
-            }
-        };
-        if let Err(err) = self.linear.update_issue_state(issue_id, &state_id).await {
-            warn!(
-                issue_id = %issue_id,
-                state_name = %target_name,
-                state_id = %state_id,
-                error = %err,
-                "failed to transition Linear issue state"
+        if target_name.eq_ignore_ascii_case(&self.linear_in_progress_state_name)
+            || target_name.eq_ignore_ascii_case(&self.linear_ready_for_release_state_name)
+        {
+            let current_issue = self.linear.get_issue(issue_id).await?;
+            let current_state = classify_linear_workflow_state(
+                &current_issue.state.name,
+                &current_issue.state.r#type,
+                "Ready",
+                &self.linear_in_progress_state_name,
+                &self.linear_ready_for_release_state_name,
+                &self.linear_done_state_type,
             );
+            let target_state =
+                if target_name.eq_ignore_ascii_case(&self.linear_in_progress_state_name) {
+                    LinearWorkflowState::InProgress
+                } else {
+                    LinearWorkflowState::ReadyForRelease
+                };
+            if !is_linear_transition_allowed(current_state, target_state) {
+                bail!(
+                    "linear transition blocked by guard: '{}' -> '{}'",
+                    current_issue.state.name,
+                    target_name
+                );
+            }
         }
+        self.linear_outbox
+            .lock()
+            .expect("linear outbox lock")
+            .enqueue(
+                issue_id,
+                "transition",
+                &json!({ "state_name": target_name }),
+            )?;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::validate_plan_governance;
+    use super::{
+        parse_merge_policy_override, resolve_merge_policy_decision, validate_plan_governance,
+    };
+    use crate::{
+        adapters_rs::CloudGateDecision,
+        policy_gate_rs::{PlanGovernancePolicy, PrRiskPolicy},
+        risk_classifier_rs::{MergeMode, RiskAssessment},
+    };
 
     #[test]
     fn accepts_plan_with_required_governance_sections() {
@@ -901,7 +1293,8 @@ Backout:
 - revert do commit em caso de regressão
 "#;
 
-        let parsed = validate_plan_governance(plan).expect("plan should be valid");
+        let parsed = validate_plan_governance(plan, &PlanGovernancePolicy::default_fail_closed())
+            .expect("plan should be valid");
         assert!(parsed.objective_present);
         assert!(parsed.changes_present);
         assert!(parsed.risk_present);
@@ -927,8 +1320,141 @@ How to test:
 - cargo test
 "#;
 
-        let err = validate_plan_governance(plan).expect_err("plan should be rejected");
+        let err = validate_plan_governance(plan, &PlanGovernancePolicy::default_fail_closed())
+            .expect_err("plan should be rejected");
         let message = err.to_string();
         assert!(message.contains("backout/rollback"), "{message}");
+    }
+
+    #[test]
+    fn accepts_plan_when_policy_relaxes_backout_requirement() {
+        let plan = r#"
+Goal: stabilize merge policy.
+
+Changes:
+- src/pr_creator_rs.rs
+
+Risk: LOW because only metadata changed.
+
+Acceptance:
+- merge light works after checks green.
+
+How to test:
+- cargo test
+"#;
+
+        let policy = PlanGovernancePolicy {
+            require_objective: true,
+            require_changes: true,
+            require_risk: true,
+            require_acceptance: true,
+            require_how_to_test: true,
+            require_backout: false,
+        };
+        let parsed = validate_plan_governance(plan, &policy).expect("plan should be accepted");
+        assert_eq!(parsed.acceptance.len(), 1);
+    }
+
+    #[test]
+    fn parses_merge_override_from_payload() {
+        let payload = r#"{
+          "merge_policy": {
+            "override": {
+              "action": "allow_auto_merge",
+              "actor": "ops@example.com",
+              "reason": "incident mitigation",
+              "ticket": "OPS-123",
+              "source": "manual",
+              "approved_at": "2026-03-06T15:00:00Z"
+            }
+          }
+        }"#;
+
+        let parsed = parse_merge_policy_override(payload).expect("override should parse");
+        assert_eq!(parsed.actor, "ops@example.com");
+        assert_eq!(parsed.reason, "incident mitigation");
+        assert_eq!(parsed.ticket.as_deref(), Some("OPS-123"));
+    }
+
+    #[test]
+    fn force_manual_override_blocks_light_auto_merge() {
+        let payload = r#"{
+          "controls": {
+            "merge_policy": {
+              "override": {
+                "action": "force_manual_review",
+                "actor": "reviewer@example.com",
+                "reason": "needs human eyes"
+              }
+            }
+          }
+        }"#;
+        let risk = RiskAssessment {
+            score: 1,
+            merge_mode: MergeMode::Light,
+            diff_lines: 20,
+            changed_files: 1,
+            changed_modules: 1,
+            docs_only: false,
+            tests_touched: true,
+            sensitive_paths: vec![],
+            reason_codes: vec![],
+        };
+
+        let decision = resolve_merge_policy_decision(
+            payload,
+            &risk,
+            None,
+            &PrRiskPolicy::load_from_path("missing", false).unwrap(),
+        );
+        assert!(!decision.auto_merge_allowed);
+        assert_eq!(
+            decision.resolution,
+            super::MergePolicyResolution::ManualReview
+        );
+        assert!(decision.reason.contains("manual review forced"));
+    }
+
+    #[test]
+    fn allow_auto_merge_override_unblocks_substantial_cloud_denial() {
+        let payload = r#"{
+          "merge_policy": {
+            "override": {
+              "action": "allow_auto_merge",
+              "actor": "lead@example.com",
+              "reason": "approved emergency patch",
+              "ticket": "SEC-9"
+            }
+          }
+        }"#;
+        let risk = RiskAssessment {
+            score: 5,
+            merge_mode: MergeMode::Substantial,
+            diff_lines: 240,
+            changed_files: 4,
+            changed_modules: 4,
+            docs_only: false,
+            tests_touched: false,
+            sensitive_paths: vec!["src/auth.rs".to_string()],
+            reason_codes: vec!["touches_sensitive_paths".to_string()],
+        };
+        let gate = CloudGateDecision {
+            decision: "NO".to_string(),
+            confidence: 0.42,
+            reason_codes: vec!["secrets_suspected".to_string()],
+            rationale: "needs manual validation".to_string(),
+        };
+
+        let decision = resolve_merge_policy_decision(
+            payload,
+            &risk,
+            Some(&gate),
+            &PrRiskPolicy::load_from_path("missing", false).unwrap(),
+        );
+        assert!(decision.auto_merge_allowed);
+        assert_eq!(decision.resolution, super::MergePolicyResolution::AutoMerge);
+        assert!(decision.reason.contains("override approved"));
+        assert!(decision.override_applied.is_some());
+        assert!(decision.cloud_policy.is_some());
     }
 }

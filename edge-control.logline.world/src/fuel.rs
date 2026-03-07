@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::{auth::AuthContext, AppState};
+use crate::{auth::AuthContext, resilience::send_with_resilience, AppState};
 
 #[derive(Clone)]
 pub struct FuelEventPayload {
@@ -70,9 +70,7 @@ pub async fn emit_event(
         "reason_codes": reason_codes,
     });
 
-    if let Some(parent) = parent_event_id {
-        metadata["parent_event_id"] = Value::String(parent);
-    }
+    metadata["parent_event_id"] = parent_event_id.map(Value::String).unwrap_or(Value::Null);
 
     if let Some(extra) = metadata_extra.as_object() {
         for (k, v) in extra {
@@ -102,16 +100,25 @@ pub async fn emit_event(
         "metadata": metadata
     });
 
-    let response = state
-        .http_client
-        .post(format!("{url}/rest/v1/fuel_events"))
-        .header("apikey", service_role_key)
-        .header("Authorization", format!("Bearer {service_role_key}"))
-        .header("Content-Type", "application/json")
-        .header("Prefer", "return=minimal")
-        .json(&fuel_row)
-        .send()
-        .await?;
+    let endpoint = format!("{url}/rest/v1/fuel_events");
+    let service_role_key = service_role_key.to_string();
+    let fuel_row_clone = fuel_row.clone();
+    let response = send_with_resilience(
+        &state.config,
+        &state.circuit_breakers,
+        "supabase.fuel_events",
+        || {
+            state
+                .http_client
+                .post(&endpoint)
+                .header("apikey", &service_role_key)
+                .header("Authorization", format!("Bearer {service_role_key}"))
+                .header("Content-Type", "application/json")
+                .header("Prefer", "return=minimal")
+                .json(&fuel_row_clone)
+        },
+    )
+    .await?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -179,12 +186,17 @@ async fn emit_obs_event(
     });
 
     let url = format!("{}/api/v1/events/ingest", base_url.trim_end_matches('/'));
-    let mut req = state.http_client.post(url).json(&event_body);
-    if let Some(token) = state.config.obs_api_token.as_deref() {
-        req = req.bearer_auth(token);
-    }
-
-    let response = req.send().await?;
+    let token = state.config.obs_api_token.clone();
+    let event_body_clone = event_body.clone();
+    let response =
+        send_with_resilience(&state.config, &state.circuit_breakers, "obs.ingest", || {
+            let mut req = state.http_client.post(&url).json(&event_body_clone);
+            if let Some(token) = token.as_deref() {
+                req = req.bearer_auth(token);
+            }
+            req
+        })
+        .await?;
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
@@ -227,4 +239,23 @@ fn read_string(payload: &serde_json::Map<String, Value>, key: &str) -> Option<St
         .get(key)
         .and_then(Value::as_str)
         .map(ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::validate_fuel_metadata;
+
+    #[test]
+    fn fuel_metadata_allows_root_event_with_null_parent() {
+        let metadata = json!({
+            "event_type": "pr.risk.opinion_emitted",
+            "trace_id": "trace-123",
+            "outcome": "emitted",
+            "parent_event_id": null
+        });
+
+        assert!(validate_fuel_metadata(&metadata).is_ok());
+    }
 }

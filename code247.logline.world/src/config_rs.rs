@@ -19,6 +19,8 @@ pub struct Config {
     pub ollama_base_url: String,
     // Linear
     pub linear_api_key: Option<String>,
+    pub linear_api_base_url: String,
+    pub linear_oauth_base_url: String,
     pub linear_team_id: String,
     pub linear_done_state_type: String,
     pub linear_client_id: Option<String>,
@@ -68,6 +70,13 @@ pub struct Config {
     pub poll_interval_ms: u64,
     pub max_review_iterations: u8,
     pub max_concurrent_jobs: usize,
+    pub stage_lease_owner: String,
+    pub stage_lease_sweep_interval_seconds: u64,
+    pub stage_timeout_planning_seconds: i64,
+    pub stage_timeout_coding_seconds: i64,
+    pub stage_timeout_reviewing_seconds: i64,
+    pub stage_timeout_validating_seconds: i64,
+    pub stage_timeout_committing_seconds: i64,
     pub ci_flaky_reruns: u8,
     pub red_main_enforced: bool,
     pub red_main_flag_path: String,
@@ -113,6 +122,10 @@ impl Config {
                 .unwrap_or_else(|_| "http://localhost:11434".to_string()),
             // Linear
             linear_api_key: env::var("LINEAR_API_KEY").ok(),
+            linear_api_base_url: env::var("LINEAR_API_BASE_URL")
+                .unwrap_or_else(|_| "https://api.linear.app".to_string()),
+            linear_oauth_base_url: env::var("LINEAR_OAUTH_BASE_URL")
+                .unwrap_or_else(|_| "https://linear.app".to_string()),
             linear_team_id: required("LINEAR_TEAM_ID")?,
             linear_done_state_type: env::var("LINEAR_DONE_STATE_TYPE")
                 .unwrap_or_else(|_| "completed".to_string()),
@@ -159,7 +172,7 @@ impl Config {
             code247_intentions_token: env::var("CODE247_INTENTIONS_TOKEN").ok(),
             code247_auth_allow_legacy_token: parse_env_bool(
                 "CODE247_AUTH_ALLOW_LEGACY_TOKEN",
-                true,
+                false,
             )?,
             supabase_jwt_secret: env::var("SUPABASE_JWT_SECRET").ok(),
             supabase_jwt_secret_legacy: env::var("SUPABASE_JWT_SECRET_LEGACY")
@@ -201,6 +214,32 @@ impl Config {
             poll_interval_ms: parse_env("POLL_INTERVAL_MS", 1000u64)?,
             max_review_iterations: parse_env("MAX_REVIEW_ITERATIONS", 2u8)?,
             max_concurrent_jobs: parse_env("MAX_CONCURRENT_JOBS", 3usize)?,
+            stage_lease_owner: env::var("CODE247_STAGE_LEASE_OWNER")
+                .unwrap_or_else(|_| format!("code247-{}", uuid::Uuid::new_v4())),
+            stage_lease_sweep_interval_seconds: parse_env(
+                "CODE247_STAGE_LEASE_SWEEP_INTERVAL_SECONDS",
+                30u64,
+            )?,
+            stage_timeout_planning_seconds: parse_env(
+                "CODE247_STAGE_TIMEOUT_PLANNING_SECONDS",
+                900i64,
+            )?,
+            stage_timeout_coding_seconds: parse_env(
+                "CODE247_STAGE_TIMEOUT_CODING_SECONDS",
+                1800i64,
+            )?,
+            stage_timeout_reviewing_seconds: parse_env(
+                "CODE247_STAGE_TIMEOUT_REVIEWING_SECONDS",
+                900i64,
+            )?,
+            stage_timeout_validating_seconds: parse_env(
+                "CODE247_STAGE_TIMEOUT_VALIDATING_SECONDS",
+                1200i64,
+            )?,
+            stage_timeout_committing_seconds: parse_env(
+                "CODE247_STAGE_TIMEOUT_COMMITTING_SECONDS",
+                2100i64,
+            )?,
             ci_flaky_reruns: parse_env("CODE247_CI_FLAKY_RERUNS", 1u8)?,
             red_main_enforced: parse_env_bool("CODE247_RED_MAIN_ENFORCED", true)?,
             red_main_flag_path: env::var("CODE247_RED_MAIN_FLAG_PATH")

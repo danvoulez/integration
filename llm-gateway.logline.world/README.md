@@ -98,6 +98,20 @@ cargo run
 3. Confirm `openapi.yaml` is up-to-date and referenced from manifest `contracts.openapi_paths`.
 4. Ship via `ecosystem.config.cjs` (Cloudflare/hosting) and monitor `gateway.log`.
 
+## Auth Smoke
+
+Use `Doppler` as the canonical secret source:
+
+```bash
+cd /Users/ubl-ops/Integration
+doppler run --project logline-ecosystem --config dev -- ./scripts/smoke-llm-gateway-auth.sh
+```
+
+The smoke validates:
+- Supabase JWT service token accepted in the canonical path
+- legacy API key accepted in `compat` mode
+- legacy API key rejected when `LLM_LEGACY_API_KEY_MODE=disabled`
+
 ## Contacts and docs
 
 - Manifest & canon: `.code247/workspace.manifest.json`, `/Users/ubl-ops/Integration/canon/workspace-ast/0.1`.

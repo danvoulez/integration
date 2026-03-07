@@ -30,12 +30,18 @@ use crate::{
     persistence_rs::{
         IntentionLinkRepository, JobsRepository, LinearOAuthTokenRepository,
         LinearWebhookDeliveryRepository, ManifestIngestionRepository, OAuthStateRepository,
+        RunTimelineRepository,
+    },
+    transition_guard_rs::{
+        build_transition_block_message, classify_linear_workflow_state, evaluate_transition,
+        workflow_state_label, LinearWorkflowState,
     },
 };
 
 #[derive(Clone)]
 struct AppState {
     jobs: Arc<Mutex<JobsRepository>>,
+    run_timeline: Arc<Mutex<RunTimelineRepository>>,
     oauth_state_store: Arc<Mutex<OAuthStateRepository>>,
     oauth_token_store: Arc<Mutex<LinearOAuthTokenRepository>>,
     manifest_ingestion_store: Arc<Mutex<ManifestIngestionRepository>>,
@@ -48,6 +54,7 @@ struct AppState {
     linear_done_state_type: String,
     linear_ready_for_release_state_name: String,
     linear_api_key: Option<String>,
+    linear_api_base_url: String,
     intentions_token: Option<String>,
     auth_allow_legacy_token: bool,
     supabase_jwt_secret: Option<String>,
@@ -239,6 +246,7 @@ struct LinearWebhookAck {
 pub async fn serve(
     config: Config,
     jobs: Arc<Mutex<JobsRepository>>,
+    run_timeline: Arc<Mutex<RunTimelineRepository>>,
     oauth_state_store: Arc<Mutex<OAuthStateRepository>>,
     oauth_token_store: Arc<Mutex<LinearOAuthTokenRepository>>,
     manifest_ingestion_store: Arc<Mutex<ManifestIngestionRepository>>,
@@ -248,6 +256,7 @@ pub async fn serve(
 ) -> Result<()> {
     let app_state = AppState {
         jobs,
+        run_timeline,
         oauth_state_store,
         oauth_token_store,
         manifest_ingestion_store,
@@ -260,6 +269,7 @@ pub async fn serve(
         linear_done_state_type: config.linear_done_state_type.clone(),
         linear_ready_for_release_state_name: config.linear_ready_for_release_state_name.clone(),
         linear_api_key: config.linear_api_key.clone(),
+        linear_api_base_url: config.linear_api_base_url.clone(),
         intentions_token: config.code247_intentions_token.clone(),
         auth_allow_legacy_token: config.code247_auth_allow_legacy_token,
         supabase_jwt_secret: config.supabase_jwt_secret.clone(),
@@ -283,6 +293,7 @@ pub async fn serve(
     let app = Router::new()
         .route("/health", get(health))
         .route("/jobs", get(list_jobs).post(create_job))
+        .route("/jobs/:job_id/timeline", get(get_job_timeline))
         .route("/oauth/start", get(oauth_start))
         .route("/oauth/callback", get(oauth_callback))
         .route("/oauth/status", get(oauth_status))
@@ -311,8 +322,7 @@ async fn health() -> impl IntoResponse {
 
 async fn list_jobs(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let request_id = Uuid::new_v4().to_string();
-    if let Some(response) =
-        ensure_intentions_auth(&state, &headers, &request_id, &state.scope_jobs_read, None)
+    if let Some(response) = ensure_admin_auth(&state, &headers, &request_id, &state.scope_jobs_read)
     {
         return response;
     }
@@ -327,7 +337,7 @@ async fn create_job(
 ) -> impl IntoResponse {
     let request_id = Uuid::new_v4().to_string();
     if let Some(response) =
-        ensure_intentions_auth(&state, &headers, &request_id, &state.scope_jobs_write, None)
+        ensure_admin_auth(&state, &headers, &request_id, &state.scope_jobs_write)
     {
         return response;
     }
@@ -353,8 +363,37 @@ async fn create_job(
     }
 }
 
-async fn oauth_start(State(state): State<AppState>) -> impl IntoResponse {
+async fn get_job_timeline(
+    State(state): State<AppState>,
+    Path(job_id): Path<String>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     let request_id = Uuid::new_v4().to_string();
+    if let Some(response) = ensure_admin_auth(&state, &headers, &request_id, &state.scope_jobs_read)
+    {
+        return response;
+    }
+
+    let entries = state
+        .run_timeline
+        .lock()
+        .expect("run_timeline lock")
+        .list_for_job(&job_id);
+    success_envelope(
+        StatusCode::OK,
+        &request_id,
+        json!({
+            "job_id": job_id,
+            "timeline": entries,
+        }),
+    )
+}
+
+async fn oauth_start(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let request_id = Uuid::new_v4().to_string();
+    if let Some(response) = ensure_admin_auth(&state, &headers, &request_id, &state.scope_admin) {
+        return response;
+    }
     let Some(oauth_client) = state.oauth_client.as_ref() else {
         return error_envelope(
             StatusCode::NOT_IMPLEMENTED,
@@ -539,8 +578,11 @@ async fn oauth_callback(
     )
 }
 
-async fn oauth_status(State(state): State<AppState>) -> impl IntoResponse {
+async fn oauth_status(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let request_id = Uuid::new_v4().to_string();
+    if let Some(response) = ensure_admin_auth(&state, &headers, &request_id, &state.scope_admin) {
+        return response;
+    }
     if state.oauth_client.is_none() {
         return success_envelope(
             StatusCode::OK,
@@ -833,7 +875,11 @@ async fn post_intentions(
         );
     };
 
-    let linear = LinearAdapter::new(linear_token, state.linear_team_id.clone());
+    let linear = LinearAdapter::new(
+        linear_token,
+        state.linear_team_id.clone(),
+        state.linear_api_base_url.clone(),
+    );
     let mut links = Vec::with_capacity(input.manifest.intentions.len());
 
     for intention in &input.manifest.intentions {
@@ -1067,7 +1113,11 @@ async fn post_intentions_sync(
             None,
         );
     };
-    let linear = LinearAdapter::new(linear_token, state.linear_team_id.clone());
+    let linear = LinearAdapter::new(
+        linear_token,
+        state.linear_team_id.clone(),
+        state.linear_api_base_url.clone(),
+    );
 
     let mut done_state_cache: Option<String> = None;
     let mut ready_for_release_state_cache: Option<String> = None;
@@ -1460,6 +1510,51 @@ fn ensure_intentions_auth(
                 None,
             ));
         }
+    }
+
+    None
+}
+
+fn ensure_admin_auth(
+    state: &AppState,
+    headers: &HeaderMap,
+    request_id: &str,
+    required_scope: &str,
+) -> Option<axum::response::Response> {
+    let auth_ctx = match validate_bearer_token(state, headers) {
+        Ok(ctx) => ctx,
+        Err(err) => {
+            let (status, code, message) = match err {
+                AuthValidationFailure::Config(msg) => {
+                    (StatusCode::SERVICE_UNAVAILABLE, "CONFIG_ERROR", msg)
+                }
+                AuthValidationFailure::Unauthorized(msg) => {
+                    (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg)
+                }
+            };
+            return Some(error_envelope(status, request_id, code, &message, None));
+        }
+    };
+
+    let has_admin_scope = auth_ctx.has_scope(&state.scope_admin);
+    if !has_admin_scope {
+        return Some(error_envelope(
+            StatusCode::FORBIDDEN,
+            request_id,
+            "FORBIDDEN",
+            "rota administrativa requer scope code247:admin",
+            None,
+        ));
+    }
+
+    if !required_scope.trim().is_empty() && !auth_ctx.has_scope(required_scope) {
+        return Some(error_envelope(
+            StatusCode::FORBIDDEN,
+            request_id,
+            "FORBIDDEN",
+            &format!("scope obrigatório ausente: {}", required_scope.trim()),
+            None,
+        ));
     }
 
     None
@@ -1937,155 +2032,20 @@ fn contains_deploy_hint(raw: &str) -> bool {
     .any(|token| normalized.contains(token))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LinearWorkflowState {
-    Ready,
-    InProgress,
-    ReadyForRelease,
-    Done,
-    Unknown,
-}
-
-fn classify_linear_workflow_state(
-    state_name: &str,
-    state_type: &str,
-    ready_state_name: &str,
-    in_progress_state_name: &str,
-    ready_for_release_state_name: &str,
-    done_state_type: &str,
-) -> LinearWorkflowState {
-    let normalized_name = state_name.trim().to_ascii_lowercase();
-    let normalized_type = state_type.trim().to_ascii_lowercase();
-    let normalized_ready = ready_state_name.trim().to_ascii_lowercase();
-    let normalized_in_progress = in_progress_state_name.trim().to_ascii_lowercase();
-    let normalized_ready_for_release = ready_for_release_state_name.trim().to_ascii_lowercase();
-    let normalized_done_type = done_state_type.trim().to_ascii_lowercase();
-
-    if !normalized_done_type.is_empty() && normalized_type == normalized_done_type {
-        return LinearWorkflowState::Done;
-    }
-    if normalized_name == normalized_ready_for_release || normalized_name == "ready for release" {
-        return LinearWorkflowState::ReadyForRelease;
-    }
-    if normalized_name == normalized_in_progress || normalized_name.starts_with("in progress") {
-        return LinearWorkflowState::InProgress;
-    }
-    if normalized_name == normalized_ready || normalized_name == "ready" {
-        return LinearWorkflowState::Ready;
-    }
-    if normalized_name == "done" || normalized_type == "completed" {
-        return LinearWorkflowState::Done;
-    }
-    LinearWorkflowState::Unknown
-}
-
-fn is_linear_transition_allowed(from: LinearWorkflowState, to: LinearWorkflowState) -> bool {
-    if from == to {
-        return true;
-    }
-    matches!(
-        (from, to),
-        (LinearWorkflowState::Ready, LinearWorkflowState::InProgress)
-            | (
-                LinearWorkflowState::InProgress,
-                LinearWorkflowState::ReadyForRelease
-            )
-            | (
-                LinearWorkflowState::ReadyForRelease,
-                LinearWorkflowState::Done
-            )
-    )
-}
-
-fn requested_workflow_transition(
-    requested_transition: bool,
-    has_ci_evidence: bool,
-    has_deploy_evidence: bool,
-) -> Option<LinearWorkflowState> {
-    if !requested_transition || !has_ci_evidence {
-        return None;
-    }
-    if has_deploy_evidence {
-        Some(LinearWorkflowState::Done)
-    } else {
-        Some(LinearWorkflowState::ReadyForRelease)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SyncTransitionEvaluation {
-    requested_transition: bool,
-    has_ci_evidence: bool,
-    has_deploy_evidence: bool,
-    target_state: Option<LinearWorkflowState>,
-    block: Option<SyncTransitionBlock>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SyncTransitionBlock {
-    code: &'static str,
-    hard_block: bool,
-}
-
 fn evaluate_sync_transition_request(
     result: &IntentionSyncResultInput,
     current_state: LinearWorkflowState,
-) -> SyncTransitionEvaluation {
+) -> crate::transition_guard_rs::SyncTransitionEvaluation {
     let requested_transition =
         result.status.eq_ignore_ascii_case("success") && result.set_done_on_success.unwrap_or(true);
     let has_ci_evidence = has_ci_evidence(result);
     let has_deploy_evidence = has_deploy_evidence(result);
-    let target_state =
-        requested_workflow_transition(requested_transition, has_ci_evidence, has_deploy_evidence);
-
-    let block = if requested_transition && !has_ci_evidence {
-        Some(SyncTransitionBlock {
-            code: "EVIDENCE_REQUIRED",
-            hard_block: false,
-        })
-    } else if let Some(target) = target_state {
-        if !is_linear_transition_allowed(current_state, target) {
-            Some(SyncTransitionBlock {
-                code: "INVALID_STATE_TRANSITION",
-                hard_block: true,
-            })
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    SyncTransitionEvaluation {
+    evaluate_transition(
         requested_transition,
         has_ci_evidence,
         has_deploy_evidence,
-        target_state,
-        block,
-    }
-}
-
-fn build_transition_block_message(
-    block_code: &str,
-    current_state_name: &str,
-    target_state: Option<LinearWorkflowState>,
-    ready_for_release_name: &str,
-) -> String {
-    match block_code {
-        "EVIDENCE_REQUIRED" => {
-            "status=success requer evidência mínima de CI/checks antes de avançar estado"
-                .to_string()
-        }
-        "INVALID_STATE_TRANSITION" => match target_state {
-            Some(target) => format!(
-                "transição Linear proibida: '{}' -> '{}'",
-                current_state_name,
-                workflow_state_label(target, ready_for_release_name)
-            ),
-            None => "transição Linear proibida".to_string(),
-        },
-        _ => "transição bloqueada por política".to_string(),
-    }
+        current_state,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2128,16 +2088,6 @@ fn emit_sync_transition_block_event(
             "has_deploy_evidence": has_deploy_evidence,
         }),
     );
-}
-
-fn workflow_state_label(state: LinearWorkflowState, ready_for_release_name: &str) -> String {
-    match state {
-        LinearWorkflowState::Ready => "Ready".to_string(),
-        LinearWorkflowState::InProgress => "In Progress".to_string(),
-        LinearWorkflowState::ReadyForRelease => ready_for_release_name.to_string(),
-        LinearWorkflowState::Done => "Done".to_string(),
-        LinearWorkflowState::Unknown => "Unknown".to_string(),
-    }
 }
 
 fn build_intention_description(
@@ -2555,14 +2505,105 @@ fn response_with_request_id(
 #[cfg(test)]
 mod tests {
     use super::{
-        auth_context_from_claims, build_transition_block_message, classify_linear_workflow_state,
-        evaluate_sync_transition_request, extract_webhook_timestamp_ms,
-        is_linear_transition_allowed, normalize_project_grant, requested_workflow_transition,
-        verify_linear_signature, IntentionSyncResultInput, LinearWorkflowState,
+        auth_context_from_claims, oauth_start, validate_bearer_token,
+        evaluate_sync_transition_request, extract_webhook_timestamp_ms, normalize_project_grant,
+        verify_linear_signature, AppState, AuthValidationFailure, IntentionSyncResultInput,
+    };
+    use crate::persistence_rs::{
+        IntentionLinkRepository, JobsRepository, LinearOAuthTokenRepository,
+        LinearWebhookDeliveryRepository, ManifestIngestionRepository, OAuthStateRepository,
+        RunTimelineRepository, SqliteDb,
+    };
+    use crate::transition_guard_rs::{
+        build_transition_block_message, classify_linear_workflow_state,
+        is_linear_transition_allowed, requested_workflow_transition, LinearWorkflowState,
+    };
+    use axum::{
+        body::to_bytes,
+        extract::State,
+        http::{header, HeaderMap, HeaderValue, StatusCode},
+        response::{IntoResponse, Response},
+        routing::post,
+        Json, Router,
     };
     use hmac::{Hmac, Mac};
-    use serde_json::json;
+    use jsonwebtoken::{EncodingKey, Header};
+    use reqwest::Client;
+    use serde_json::{json, Value};
     use sha2::Sha256;
+    use std::{
+        collections::HashMap,
+        env,
+        sync::{Arc, Mutex},
+    };
+    use tokio::{net::TcpListener, task::JoinHandle};
+    use uuid::Uuid;
+
+    fn test_app_state(auth_allow_legacy_token: bool, jwt_secret: Option<&str>) -> AppState {
+        let path = env::temp_dir().join(format!("code247-auth-test-{}.db", Uuid::new_v4()));
+        let sqlite = SqliteDb::open(&path.display().to_string()).expect("sqlite open");
+        sqlite.run_migrations().expect("sqlite migrations");
+        let conn = sqlite.connection();
+
+        AppState {
+            jobs: Arc::new(Mutex::new(JobsRepository::new(conn.clone(), None))),
+            run_timeline: Arc::new(Mutex::new(RunTimelineRepository::new(conn.clone()))),
+            oauth_state_store: Arc::new(Mutex::new(OAuthStateRepository::new(conn.clone()))),
+            oauth_token_store: Arc::new(Mutex::new(LinearOAuthTokenRepository::new(conn.clone()))),
+            manifest_ingestion_store: Arc::new(Mutex::new(ManifestIngestionRepository::new(
+                conn.clone(),
+            ))),
+            intention_link_store: Arc::new(Mutex::new(IntentionLinkRepository::new(conn.clone()))),
+            oauth_client: None,
+            oauth_state_ttl_seconds: 600,
+            linear_team_id: "team".to_string(),
+            linear_claim_state_name: "Ready".to_string(),
+            linear_claim_in_progress_state_name: "In Progress".to_string(),
+            linear_done_state_type: "completed".to_string(),
+            linear_ready_for_release_state_name: "Ready for Release".to_string(),
+            linear_api_key: None,
+            linear_api_base_url: "https://api.linear.app".to_string(),
+            intentions_token: Some("legacy-intentions-token".to_string()),
+            auth_allow_legacy_token,
+            supabase_jwt_secret: jwt_secret.map(ToString::to_string),
+            supabase_jwt_secret_legacy: None,
+            supabase_jwt_audience: None,
+            scope_jobs_read: "code247:jobs:read".to_string(),
+            scope_jobs_write: "code247:jobs:write".to_string(),
+            scope_intentions_write: "code247:intentions:write".to_string(),
+            scope_intentions_sync: "code247:intentions:sync".to_string(),
+            scope_intentions_read: "code247:intentions:read".to_string(),
+            scope_admin: "code247:admin".to_string(),
+            linear_webhook_secret: Some("linear-secret".to_string()),
+            linear_webhook_max_skew_seconds: 60,
+            linear_meta_path: ".code247/linear-meta.json".to_string(),
+            public_url: "https://code247.logline.world".to_string(),
+            obs_api_base_url: None,
+            obs_api_token: None,
+            obs_api_client: Client::new(),
+            webhook_delivery_store: Arc::new(Mutex::new(LinearWebhookDeliveryRepository::new(
+                conn,
+            ))),
+        }
+    }
+
+    fn bearer_headers(token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {token}")).expect("header value"),
+        );
+        headers
+    }
+
+    fn sign_hs256_jwt(secret: &str, claims: serde_json::Value) -> String {
+        jsonwebtoken::encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .expect("jwt encode")
+    }
 
     #[test]
     fn validates_linear_signature_hex() {
@@ -2733,6 +2774,55 @@ mod tests {
     }
 
     #[test]
+    fn rejects_legacy_token_when_disabled() {
+        let state = test_app_state(false, Some("jwt-secret"));
+        let headers = bearer_headers("legacy-intentions-token");
+        let err = validate_bearer_token(&state, &headers).expect_err("legacy token must fail");
+        match err {
+            AuthValidationFailure::Config(_) => panic!("expected unauthorized, got config error"),
+            AuthValidationFailure::Unauthorized(message) => {
+                assert_eq!(message, "token inválido");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn oauth_start_requires_admin_scope() {
+        let state = test_app_state(false, Some("jwt-secret"));
+        let user_token = sign_hs256_jwt(
+            "jwt-secret",
+            json!({
+                "sub": "svc-user",
+                "exp": 4_102_444_800u64,
+                "scope": "code247:jobs:read"
+            }),
+        );
+
+        let response = oauth_start(State(state), bearer_headers(&user_token))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn oauth_start_accepts_admin_jwt_before_oauth_checks() {
+        let state = test_app_state(false, Some("jwt-secret"));
+        let admin_token = sign_hs256_jwt(
+            "jwt-secret",
+            json!({
+                "sub": "svc-admin",
+                "exp": 4_102_444_800u64,
+                "scope": "code247:admin"
+            }),
+        );
+
+        let response = oauth_start(State(state), bearer_headers(&admin_token))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+
+    #[test]
     fn eval_transition_soft_blocks_when_ci_evidence_missing() {
         let result = IntentionSyncResultInput {
             intention_id: "abc".to_string(),
@@ -2802,5 +2892,470 @@ mod tests {
         let eval = evaluate_sync_transition_request(&result, LinearWorkflowState::ReadyForRelease);
         assert_eq!(eval.target_state, Some(LinearWorkflowState::Done));
         assert!(eval.block.is_none());
+    }
+
+    const MOCK_LINEAR_STATE_READY: &str = "state-ready";
+    const MOCK_LINEAR_STATE_IN_PROGRESS: &str = "state-in-progress";
+    const MOCK_LINEAR_STATE_READY_FOR_RELEASE: &str = "state-ready-for-release";
+    const MOCK_LINEAR_STATE_DONE: &str = "state-done";
+
+    #[derive(Clone)]
+    struct MockLinearState {
+        issues: Arc<Mutex<HashMap<String, MockLinearIssue>>>,
+        next_issue: Arc<Mutex<u32>>,
+    }
+
+    #[derive(Clone)]
+    struct MockLinearIssue {
+        id: String,
+        identifier: String,
+        title: String,
+        description: Option<String>,
+        state_id: String,
+    }
+
+    struct MockLinearServer {
+        base_url: String,
+        state: MockLinearState,
+        handle: JoinHandle<()>,
+    }
+
+    impl Drop for MockLinearServer {
+        fn drop(&mut self) {
+            self.handle.abort();
+        }
+    }
+
+    impl MockLinearServer {
+        async fn spawn() -> Self {
+            let state = MockLinearState {
+                issues: Arc::new(Mutex::new(HashMap::new())),
+                next_issue: Arc::new(Mutex::new(1)),
+            };
+
+            let app = Router::new()
+                .route("/graphql", post(mock_linear_graphql))
+                .with_state(state.clone());
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("mock linear bind");
+            let address = listener.local_addr().expect("mock linear addr");
+            let handle = tokio::spawn(async move {
+                axum::serve(listener, app).await.expect("mock linear serve");
+            });
+
+            Self {
+                base_url: format!("http://{}", address),
+                state,
+                handle,
+            }
+        }
+
+        fn set_issue_state(&self, issue_id: &str, state_id: &str) {
+            let mut issues = self.state.issues.lock().expect("mock issues lock");
+            let issue = issues.get_mut(issue_id).expect("mock issue exists");
+            issue.state_id = state_id.to_string();
+        }
+
+        fn issue_state_name(&self, issue_id: &str) -> String {
+            let issues = self.state.issues.lock().expect("mock issues lock");
+            let issue = issues.get(issue_id).expect("mock issue exists");
+            mock_linear_state_meta(&issue.state_id).1.to_string()
+        }
+    }
+
+    fn mock_linear_state_meta(state_id: &str) -> (&'static str, &'static str, &'static str) {
+        match state_id {
+            MOCK_LINEAR_STATE_READY => (MOCK_LINEAR_STATE_READY, "Ready", "unstarted"),
+            MOCK_LINEAR_STATE_IN_PROGRESS => (
+                MOCK_LINEAR_STATE_IN_PROGRESS,
+                "In Progress (Code247)",
+                "started",
+            ),
+            MOCK_LINEAR_STATE_READY_FOR_RELEASE => (
+                MOCK_LINEAR_STATE_READY_FOR_RELEASE,
+                "Ready for Release",
+                "started",
+            ),
+            MOCK_LINEAR_STATE_DONE => (MOCK_LINEAR_STATE_DONE, "Done", "completed"),
+            other => panic!("unknown mock state id: {other}"),
+        }
+    }
+
+    fn mock_linear_state_json(state_id: &str) -> Value {
+        let (id, name, state_type) = mock_linear_state_meta(state_id);
+        json!({
+            "id": id,
+            "name": name,
+            "type": state_type,
+        })
+    }
+
+    async fn mock_linear_graphql(
+        State(state): State<MockLinearState>,
+        Json(payload): Json<Value>,
+    ) -> Json<Value> {
+        let query = payload
+            .get("query")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let variables = payload.get("variables").cloned().unwrap_or_else(|| json!({}));
+
+        if query.contains("issueCreate(") {
+            let mut next_issue = state.next_issue.lock().expect("mock next issue lock");
+            let issue_number = *next_issue;
+            *next_issue += 1;
+            let issue_id = format!("lin-{issue_number}");
+            let identifier = format!("VV-{issue_number}");
+            let issue = MockLinearIssue {
+                id: issue_id.clone(),
+                identifier: identifier.clone(),
+                title: variables
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                description: variables
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(ToString::to_string),
+                state_id: MOCK_LINEAR_STATE_READY.to_string(),
+            };
+            state
+                .issues
+                .lock()
+                .expect("mock issues lock")
+                .insert(issue_id.clone(), issue);
+            return Json(json!({
+                "data": {
+                    "issueCreate": {
+                        "success": true,
+                        "issue": {
+                            "id": issue_id,
+                            "identifier": identifier,
+                        }
+                    }
+                }
+            }));
+        }
+
+        if query.contains("issueUpdate(") && variables.get("stateId").is_some() {
+            let issue_id = variables
+                .get("id")
+                .and_then(Value::as_str)
+                .expect("state update issue id");
+            let state_id = variables
+                .get("stateId")
+                .and_then(Value::as_str)
+                .expect("state update state id");
+            let mut issues = state.issues.lock().expect("mock issues lock");
+            let issue = issues.get_mut(issue_id).expect("mock issue exists");
+            issue.state_id = state_id.to_string();
+            return Json(json!({
+                "data": {
+                    "issueUpdate": {
+                        "success": true
+                    }
+                }
+            }));
+        }
+
+        if query.contains("issueUpdate(") && variables.get("title").is_some() {
+            let issue_id = variables
+                .get("id")
+                .and_then(Value::as_str)
+                .expect("issue update issue id");
+            let mut issues = state.issues.lock().expect("mock issues lock");
+            let issue = issues.get_mut(issue_id).expect("mock issue exists");
+            issue.title = variables
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            issue.description = variables
+                .get("description")
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
+            return Json(json!({
+                "data": {
+                    "issueUpdate": {
+                        "success": true,
+                        "issue": {
+                            "id": issue.id,
+                            "identifier": issue.identifier,
+                        }
+                    }
+                }
+            }));
+        }
+
+        if query.contains("commentCreate(") {
+            return Json(json!({
+                "data": {
+                    "commentCreate": {
+                        "success": true
+                    }
+                }
+            }));
+        }
+
+        if query.contains("issue(id:$id)") {
+            let issue_id = variables
+                .get("id")
+                .and_then(Value::as_str)
+                .expect("issue lookup id");
+            let issues = state.issues.lock().expect("mock issues lock");
+            let issue = issues.get(issue_id).expect("mock issue exists");
+            return Json(json!({
+                "data": {
+                    "issue": {
+                        "id": issue.id,
+                        "identifier": issue.identifier,
+                        "title": issue.title,
+                        "description": issue.description,
+                        "state": mock_linear_state_json(&issue.state_id),
+                    }
+                }
+            }));
+        }
+
+        if query.contains("team(id:$teamId){states") {
+            return Json(json!({
+                "data": {
+                    "team": {
+                        "states": [
+                            mock_linear_state_json(MOCK_LINEAR_STATE_READY),
+                            mock_linear_state_json(MOCK_LINEAR_STATE_IN_PROGRESS),
+                            mock_linear_state_json(MOCK_LINEAR_STATE_READY_FOR_RELEASE),
+                            mock_linear_state_json(MOCK_LINEAR_STATE_DONE),
+                        ]
+                    }
+                }
+            }));
+        }
+
+        Json(json!({
+            "errors": [{
+                "message": format!("unsupported mock query: {query}"),
+            }]
+        }))
+    }
+
+    async fn response_json(response: Response) -> (StatusCode, Value) {
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response bytes");
+        let json = serde_json::from_slice::<Value>(&body).expect("json response");
+        (status, json)
+    }
+
+    fn sync_scope_headers(secret: &str, workspace: &str, project: &str) -> HeaderMap {
+        let token = sign_hs256_jwt(
+            secret,
+            json!({
+                "sub": "svc-sync",
+                "exp": 4_102_444_800u64,
+                "scope": "code247:intentions:write code247:intentions:sync",
+                "code247_projects": [format!("{workspace}/{project}")]
+            }),
+        );
+        bearer_headers(&token)
+    }
+
+    async fn intake_single_intention(
+        state: AppState,
+        headers: HeaderMap,
+        workspace: &str,
+        project: &str,
+        intention_id: &str,
+    ) -> String {
+        let response = super::post_intentions(
+            State(state.clone()),
+            headers,
+            Json(super::IntentionIntakeRequest {
+                manifest: super::IntentionManifest {
+                    workspace: workspace.to_string(),
+                    project: project.to_string(),
+                    updated_at: "2026-03-07T08:00:00Z".to_string(),
+                    intentions: vec![super::IntentionRecord {
+                        id: intention_id.to_string(),
+                        title: "State governance smoke".to_string(),
+                        r#type: None,
+                        scope: None,
+                        priority: Some("medium".to_string()),
+                        tasks: vec![],
+                    }],
+                },
+                source: "/tmp/state-governance".to_string(),
+                revision: Some("state-governance-test".to_string()),
+                ci_target: None,
+            }),
+        )
+        .await
+        .into_response();
+
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let link = state
+            .intention_link_store
+            .lock()
+            .expect("intention_link_store lock")
+            .get_link(workspace, project, intention_id)
+            .expect("intention link exists");
+        link.linear_issue_id
+    }
+
+    async fn sync_intention(
+        state: AppState,
+        headers: HeaderMap,
+        workspace: &str,
+        project: &str,
+        intention_id: &str,
+        ci_url: Option<&str>,
+        evidence: Vec<(&str, &str)>,
+    ) -> (StatusCode, Value) {
+        let response = super::post_intentions_sync(
+            State(state),
+            headers,
+            Json(super::IntentionSyncRequest {
+                workspace: workspace.to_string(),
+                project: project.to_string(),
+                results: vec![super::IntentionSyncResultInput {
+                    intention_id: intention_id.to_string(),
+                    status: "success".to_string(),
+                    summary: Some("state-governance test".to_string()),
+                    ci: ci_url.map(|url| super::IntentionSyncCiInput {
+                        queue_id: Some("q-state".to_string()),
+                        job: Some("job-state".to_string()),
+                        url: Some(url.to_string()),
+                    }),
+                    evidence: evidence
+                        .into_iter()
+                        .map(|(label, url)| super::IntentionSyncEvidenceInput {
+                            label: label.to_string(),
+                            url: url.to_string(),
+                        })
+                        .collect(),
+                    set_done_on_success: Some(true),
+                }],
+            }),
+        )
+        .await
+        .into_response();
+
+        response_json(response).await
+    }
+
+    #[tokio::test]
+    async fn sync_http_moves_in_progress_to_ready_for_release() {
+        let mock_linear = MockLinearServer::spawn().await;
+        let mut state = test_app_state(false, Some("jwt-secret"));
+        state.linear_api_key = Some("linear-test-token".to_string());
+        state.linear_api_base_url = mock_linear.base_url.clone();
+
+        let workspace = "workspace-a";
+        let project = "project-x";
+        let intention_id = "intent-rr";
+        let headers = sync_scope_headers("jwt-secret", workspace, project);
+        let linear_issue_id =
+            intake_single_intention(state.clone(), headers.clone(), workspace, project, intention_id)
+                .await;
+        mock_linear.set_issue_state(&linear_issue_id, MOCK_LINEAR_STATE_IN_PROGRESS);
+
+        let (status, body) = sync_intention(
+            state,
+            headers,
+            workspace,
+            project,
+            intention_id,
+            Some("https://ci.example/run/1"),
+            vec![],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["errors"], json!([]));
+        assert_eq!(body["synced"][0]["intention_id"], intention_id);
+        assert_eq!(body["synced"][0]["moved_to_ready_for_release"], true);
+        assert_eq!(body["synced"][0]["moved_to_done"], false);
+        assert_eq!(body["synced"][0]["target_state"], "Ready for Release");
+        assert_eq!(
+            mock_linear.issue_state_name(&linear_issue_id),
+            "Ready for Release"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_http_blocks_in_progress_to_done_even_with_deploy_evidence() {
+        let mock_linear = MockLinearServer::spawn().await;
+        let mut state = test_app_state(false, Some("jwt-secret"));
+        state.linear_api_key = Some("linear-test-token".to_string());
+        state.linear_api_base_url = mock_linear.base_url.clone();
+
+        let workspace = "workspace-a";
+        let project = "project-x";
+        let intention_id = "intent-block-done";
+        let headers = sync_scope_headers("jwt-secret", workspace, project);
+        let linear_issue_id =
+            intake_single_intention(state.clone(), headers.clone(), workspace, project, intention_id)
+                .await;
+        mock_linear.set_issue_state(&linear_issue_id, MOCK_LINEAR_STATE_IN_PROGRESS);
+
+        let (status, body) = sync_intention(
+            state,
+            headers,
+            workspace,
+            project,
+            intention_id,
+            Some("https://ci.example/run/2"),
+            vec![("deploy", "https://deploy.example/release/2")],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["synced"], json!([]));
+        assert_eq!(body["errors"][0]["intention_id"], intention_id);
+        assert_eq!(body["errors"][0]["code"], "INVALID_STATE_TRANSITION");
+        assert_eq!(
+            mock_linear.issue_state_name(&linear_issue_id),
+            "In Progress (Code247)"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_http_moves_ready_for_release_to_done_with_deploy_evidence() {
+        let mock_linear = MockLinearServer::spawn().await;
+        let mut state = test_app_state(false, Some("jwt-secret"));
+        state.linear_api_key = Some("linear-test-token".to_string());
+        state.linear_api_base_url = mock_linear.base_url.clone();
+
+        let workspace = "workspace-a";
+        let project = "project-x";
+        let intention_id = "intent-done";
+        let headers = sync_scope_headers("jwt-secret", workspace, project);
+        let linear_issue_id =
+            intake_single_intention(state.clone(), headers.clone(), workspace, project, intention_id)
+                .await;
+        mock_linear.set_issue_state(&linear_issue_id, MOCK_LINEAR_STATE_READY_FOR_RELEASE);
+
+        let (status, body) = sync_intention(
+            state,
+            headers,
+            workspace,
+            project,
+            intention_id,
+            Some("https://ci.example/run/3"),
+            vec![("deploy", "https://deploy.example/release/3")],
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["errors"], json!([]));
+        assert_eq!(body["synced"][0]["intention_id"], intention_id);
+        assert_eq!(body["synced"][0]["moved_to_ready_for_release"], false);
+        assert_eq!(body["synced"][0]["moved_to_done"], true);
+        assert_eq!(body["synced"][0]["target_state"], "Done");
+        assert_eq!(mock_linear.issue_state_name(&linear_issue_id), "Done");
     }
 }

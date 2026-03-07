@@ -3,6 +3,8 @@
 import { useState } from "react";
 import AppShell from "@/components/AppShell";
 import { fuelByApps, fuelByTenants, fuelByUsers, totalFuel, FuelMetric } from "@/lib/data";
+import { useAuth } from "./providers";
+import { getSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
 
 type ViewMode = "realtime" | "estatisticas";
 
@@ -112,7 +114,183 @@ function FuelSection({ title, data }: { title: string; data: FuelMetric[] }) {
   );
 }
 
-export default function EcossistemaPage() {
+// ── Reset Password Form (shown when user clicks reset link) ──
+function ResetPasswordForm() {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password !== confirm) { setError('Passwords do not match'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    setError(null);
+    setLoading(true);
+    const supabase = getSupabaseBrowserClient();
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+    if (err) { setError(err.message); return; }
+    setDone(true);
+    setTimeout(() => window.location.reload(), 1500);
+  };
+
+  return (
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: 16 }}>
+      <div style={{ width: '100%', maxWidth: 320 }}>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <h1 style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>UBL Workspace</h1>
+          <p style={{ marginTop: 4, fontSize: 11, color: 'var(--t3)' }}>Set your new password</p>
+        </div>
+        {done ? (
+          <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--green)' }}>Password updated. Redirecting...</p>
+        ) : (
+          <form onSubmit={handleUpdate} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <input type="password" placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: 'var(--t1)' }} />
+            <input type="password" placeholder="Confirm password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required minLength={6} style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: 'var(--t1)' }} />
+            {error && <p style={{ fontSize: 10, color: 'var(--red)' }}>{error}</p>}
+            <button type="submit" disabled={loading} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, background: 'var(--blue)', border: 'none', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
+              {loading ? 'Updating...' : 'Update password'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Login Gate (sign in / sign up / forgot password) ──
+function LoginGate() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+
+    const supabase = getSupabaseBrowserClient();
+
+    if (mode === 'forgot') {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}`,
+      });
+      setLoading(false);
+      if (resetErr) { setError(resetErr.message); return; }
+      setInfo('Check your email for a password reset link.');
+      return;
+    }
+
+    const { error: authError } =
+      mode === 'login'
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password });
+
+    setLoading(false);
+    if (authError) {
+      setError(authError.message);
+    }
+  };
+
+  const inputStyle = { width: '100%', background: 'var(--bg-card)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: 'var(--t1)' };
+
+  return (
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: 16 }}>
+      <div style={{ width: '100%', maxWidth: 320 }}>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <h1 style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)' }}>UBL Workspace</h1>
+          <p style={{ marginTop: 4, fontSize: 11, color: 'var(--t3)' }}>LogLine Ops</p>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required style={inputStyle} />
+
+          {mode !== 'forgot' && (
+            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} style={inputStyle} />
+          )}
+
+          {error && <p style={{ fontSize: 10, color: 'var(--red)' }}>{error}</p>}
+          {info && <p style={{ fontSize: 10, color: 'var(--green)' }}>{info}</p>}
+
+          <button type="submit" disabled={loading} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, background: 'var(--blue)', border: 'none', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
+            {loading
+              ? 'Please wait...'
+              : mode === 'login'
+                ? 'Sign in'
+                : mode === 'signup'
+                  ? 'Create account'
+                  : 'Send reset link'}
+          </button>
+        </form>
+
+        <div style={{ textAlign: 'center', marginTop: 16 }}>
+          {mode === 'login' && (
+            <>
+              <p style={{ fontSize: 10, color: 'var(--t3)' }}>
+                <button onClick={() => { setMode('forgot'); setError(null); setInfo(null); }} style={{ background: 'none', border: 'none', color: 'var(--t2)', textDecoration: 'underline', cursor: 'pointer', fontSize: 10 }}>
+                  Forgot password?
+                </button>
+              </p>
+              <p style={{ fontSize: 10, color: 'var(--t3)', marginTop: 6 }}>
+                No account?{' '}
+                <button onClick={() => { setMode('signup'); setError(null); setInfo(null); }} style={{ background: 'none', border: 'none', color: 'var(--t2)', textDecoration: 'underline', cursor: 'pointer', fontSize: 10 }}>
+                  Sign up
+                </button>
+              </p>
+            </>
+          )}
+          {mode === 'signup' && (
+            <p style={{ fontSize: 10, color: 'var(--t3)' }}>
+              Already have an account?{' '}
+              <button onClick={() => { setMode('login'); setError(null); setInfo(null); }} style={{ background: 'none', border: 'none', color: 'var(--t2)', textDecoration: 'underline', cursor: 'pointer', fontSize: 10 }}>
+                Sign in
+              </button>
+            </p>
+          )}
+          {mode === 'forgot' && (
+            <p style={{ fontSize: 10, color: 'var(--t3)' }}>
+              <button onClick={() => { setMode('login'); setError(null); setInfo(null); }} style={{ background: 'none', border: 'none', color: 'var(--t2)', textDecoration: 'underline', cursor: 'pointer', fontSize: 10 }}>
+                Back to sign in
+              </button>
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page Export ──
+export default function Page() {
+  const { session, loading: authLoading, isRecovery } = useAuth();
+
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
+        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--t3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Initializing...</span>
+      </div>
+    );
+  }
+
+  if (isRecovery && session) {
+    return <ResetPasswordForm />;
+  }
+
+  if (!session) {
+    return <LoginGate />;
+  }
+
+  return <Dashboard />;
+}
+
+// ── Dashboard (previously EcossistemaPage) ──
+function Dashboard() {
   const [viewMode, setViewMode] = useState<ViewMode>("realtime");
   const totalPct = Math.round((totalFuel.consumed / totalFuel.budget) * 100);
 

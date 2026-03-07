@@ -8,6 +8,7 @@ use tokio::time::sleep;
 use crate::{
     adapters_rs::{LinearIssue, ReviewOutput},
     persistence_rs::Job,
+    resilience_rs::{HttpResilience, ResiliencePolicy},
     risk_classifier_rs::{MergeMode, RiskAssessment},
 };
 
@@ -20,6 +21,7 @@ pub struct PrCreator {
     auto_merge_timeout: Duration,
     auto_merge_poll: Duration,
     http: Client,
+    resilience: HttpResilience,
 }
 
 impl PrCreator {
@@ -39,6 +41,7 @@ impl PrCreator {
             auto_merge_timeout: Duration::from_secs(auto_merge_timeout_seconds.max(60)),
             auto_merge_poll: Duration::from_secs(auto_merge_poll_seconds.max(5)),
             http: Client::new(),
+            resilience: HttpResilience::new(ResiliencePolicy::default()),
         }
     }
 
@@ -101,19 +104,22 @@ impl PrCreator {
         );
 
         let url = format!("https://api.github.com/repos/{}/pulls", self.github_repo);
+        let payload = json!({
+            "title": title,
+            "head": branch,
+            "base": self.base_branch,
+            "body": body,
+            "draft": false,
+        });
         let resp: GithubPr = self
-            .http
-            .post(url)
-            .bearer_auth(&self.github_token)
-            .header("User-Agent", "code247-agent")
-            .json(&json!({
-                "title": title,
-                "head": branch,
-                "base": self.base_branch,
-                "body": body,
-                "draft": false,
-            }))
-            .send()
+            .resilience
+            .send("github.pulls.create", || {
+                self.http
+                    .post(&url)
+                    .bearer_auth(&self.github_token)
+                    .header("User-Agent", "code247-agent")
+                    .json(&payload)
+            })
             .await
             .context("falha ao chamar GitHub pulls API")?
             .error_for_status()
@@ -196,13 +202,15 @@ impl PrCreator {
             "https://api.github.com/repos/{}/pulls/{}",
             self.github_repo, pr_number
         );
-        self.http
-            .get(url)
-            .bearer_auth(&self.github_token)
-            .header("User-Agent", "code247-agent")
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .send()
+        self.resilience
+            .send("github.pulls.get", || {
+                self.http
+                    .get(&url)
+                    .bearer_auth(&self.github_token)
+                    .header("User-Agent", "code247-agent")
+                    .header("Accept", "application/vnd.github+json")
+                    .header("X-GitHub-Api-Version", "2022-11-28")
+            })
             .await
             .context("falha ao buscar detalhes do PR no GitHub")?
             .error_for_status()
@@ -225,13 +233,15 @@ impl PrCreator {
             self.github_repo, sha
         );
         let response = self
-            .http
-            .get(url)
-            .bearer_auth(&self.github_token)
-            .header("User-Agent", "code247-agent")
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .send()
+            .resilience
+            .send("github.commits.status", || {
+                self.http
+                    .get(&url)
+                    .bearer_auth(&self.github_token)
+                    .header("User-Agent", "code247-agent")
+                    .header("Accept", "application/vnd.github+json")
+                    .header("X-GitHub-Api-Version", "2022-11-28")
+            })
             .await
             .context("falha ao buscar status checks do commit")?
             .error_for_status()
@@ -247,17 +257,20 @@ impl PrCreator {
             "https://api.github.com/repos/{}/pulls/{}/merge",
             self.github_repo, pr_number
         );
+        let payload = json!({
+            "merge_method": "squash",
+        });
         let response = self
-            .http
-            .put(url)
-            .bearer_auth(&self.github_token)
-            .header("User-Agent", "code247-agent")
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .json(&json!({
-                "merge_method": "squash",
-            }))
-            .send()
+            .resilience
+            .send("github.pulls.merge", || {
+                self.http
+                    .put(&url)
+                    .bearer_auth(&self.github_token)
+                    .header("User-Agent", "code247-agent")
+                    .header("Accept", "application/vnd.github+json")
+                    .header("X-GitHub-Api-Version", "2022-11-28")
+                    .json(&payload)
+            })
             .await
             .context("falha ao chamar merge do PR no GitHub")?
             .error_for_status()

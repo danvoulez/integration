@@ -1,17 +1,17 @@
 {
   "catalog_version": "logline.capability-catalog.v1",
-  "generated_at": "2026-03-06T11:00:20.422Z",
+  "generated_at": "2026-03-06T13:22:04.786Z",
   "generated_by": "scripts/generate-capability-catalog.mjs",
   "summary": {
-    "total_capabilities": 127,
+    "total_capabilities": 131,
     "cli_capabilities": 80,
-    "api_capabilities": 47,
+    "api_capabilities": 51,
     "by_service": {
       "code247": 10,
       "edge-control": 7,
       "inference-plane": 5,
       "llm-gateway": 10,
-      "obs-api": 15,
+      "obs-api": 19,
       "logic-cli": 80
     }
   },
@@ -32,7 +32,7 @@
           "http://localhost:3001"
         ],
         "visibility": "public",
-        "endpoint_count": 15
+        "endpoint_count": 19
       },
       {
         "service_id": "code247",
@@ -566,6 +566,33 @@
       "source_file": "obs-api.logline.world/openapi.yaml"
     },
     {
+      "capability_id": "api.obs-api.get.api.v1.fuel.alerts",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/fuel/alerts",
+      "summary": "Materialize and list open Fuel alerts",
+      "tags": [
+        "Fuel",
+        "Alerts"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.fuel.calibration",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/fuel/calibration",
+      "summary": "Get Fuel calibration analysis for k_latency, k_errors and k_energy",
+      "tags": [
+        "Fuel"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
       "capability_id": "api.obs-api.get.api.v1.fuel.dashboard",
       "surface": "api",
       "service_id": "obs-api",
@@ -573,6 +600,19 @@
       "method": "GET",
       "path": "/api/v1/fuel/dashboard",
       "summary": "Get Fuel dashboard payload (Realtime + Estatistica)",
+      "tags": [
+        "Fuel"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.get.api.v1.fuel.ops",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "GET",
+      "path": "/api/v1/fuel/ops",
+      "summary": "Get recurring Fuel baseline and alert job evidence",
       "tags": [
         "Fuel"
       ],
@@ -692,6 +732,19 @@
       "summary": "Ingest operational event",
       "tags": [
         "Events"
+      ],
+      "source_file": "obs-api.logline.world/openapi.yaml"
+    },
+    {
+      "capability_id": "api.obs-api.post.api.v1.fuel.ops",
+      "surface": "api",
+      "service_id": "obs-api",
+      "visibility": "public",
+      "method": "POST",
+      "path": "/api/v1/fuel/ops",
+      "summary": "Materialize recurring Fuel baseline and alert jobs",
+      "tags": [
+        "Fuel"
       ],
       "source_file": "obs-api.logline.world/openapi.yaml"
     },

@@ -1,74 +1,61 @@
-# LogLine Ecosystem — LLM Start Here
+# LLM START HERE
 
-**Read this before doing anything.** This is the normative guide for AI agents working in this ecosystem.
+## Scope
 
-## What is LogLine?
+- Workspace: `Integration`
+- Primary stack: Rust services + Next.js `obs-api`
+- Primary infra: Supabase
+- Primary secret source: `Doppler`
 
-LogLine is a Rust-first ecosystem with 5 core services:
+## Read Order
 
-| Service | Purpose | Stack |
-|---------|---------|-------|
-| `logic.logline.world` | CLI + Core Crates (HQ) | Rust workspace |
-| `llm-gateway.logline.world` | LLM Routing + Billing | Rust binary |
-| `code247.logline.world` | Autonomous Coding Agent | Rust binary |
-| `edge-control.logline.world` | Control Plane (policy, orchestration) | Rust binary |
-| `obs-api.logline.world` | Observability Dashboard | Next.js |
+1. This file
+2. Service-local `LLM_START_HERE.md`
+3. `TASKLIST-GERAL.md`
+4. Only then open broader docs
 
-## Architecture Principles
+## Service Map
 
-1. **Rust owns business logic** — CLI and services are authoritative
-2. **Supabase owns state** — Postgres, Auth, Realtime, Storage
-3. **Contract-first** — OpenAPI, JSON schemas, events registry
-4. **Fuel is the common currency** — tracks usage, cost, and operational health
+- `logic.logline.world`: CLI + shared Rust crates
+- `llm-gateway.logline.world`: canonical LLM routing + fuel/accounting
+- `code247.logline.world`: autonomous coding pipeline + Linear + GitHub
+- `edge-control.logline.world`: policy/control-plane + orchestration
+- `obs-api.logline.world`: observability/read models only
 
-## Key Documents (in this folder)
+## Global Invariants
 
-| Document | Purpose |
-|----------|---------|
-| `ARCHITECTURE.md` | **Source of Truth** — architecture and integration contracts |
-| `SERVICE_TOPOLOGY.md` | Network, ports, DNS, communication matrix |
-| `ECOSYSTEM_SERVICE_STANDARD_v1.md` | API/CLI/event standards |
-| `FUEL_SYSTEM_SPEC.md` | **Fuel specification** — 3-layer model, schemas, calculation, visualization |
-| `code247-intentions.md` | CI/CD trigger contract for all projects |
-| `TASKLIST-GERAL.md` | Current sprint backlog |
+- Supabase is first-class infra. Do not treat it as optional integration.
+- Secrets come from `doppler run --project logline-ecosystem --config <env> -- ...`
+- `.env` is fallback for isolated local dev only.
+- Do not hardcode secrets, tokens, URLs with credentials, or connection strings.
+- Do not bypass contracts, policy, or canonical schemas.
+- Do not invent mock data in production paths.
+- Do not mark Linear `Done` without required evidence.
+- Do not emit cross-service events without `request_id`.
 
-## Service-Specific Guides
+## Operational Defaults
 
-Each service has its own `LLM_START_HERE.md`:
-- `code247.logline.world/LLM_START_HERE.md`
-- `llm-gateway.logline.world/LLM_START_HERE.md`
-- `edge-control.logline.world/LLM_START_HERE.md`
-- `obs-api.logline.world/LLM_START_HERE.md`
-- `logic.logline.world/docs/LLM_START_HERE.md`
+- Prefer backend work over UI.
+- Prefer existing scripts over ad hoc commands.
+- Prefer Rust services as authority; `obs-api` observes, not decides.
+- Prefer `rg`, targeted tests, and narrow diffs.
 
-## What You MUST NOT Do
-
-1. **Never bypass CLI governance** — all capabilities must exist in CLI first
-2. **Never hardcode secrets** — use Doppler (`doppler run`)
-3. **Never emit events without `request_id` and `trace_id`**
-4. **Never mark Linear issues as `Done` without evidence**
-5. **Never touch `contracts/*`, `policy/*`, `openapi/*` without validation
-
-## What You SHOULD Do
-
-1. Read the service-specific `LLM_START_HERE.md` before editing that service
-2. Check `TASKLIST-GERAL.md` for current priorities
-3. Run `./scripts/validate-contracts.sh` after touching contracts
-4. Emit fuel events for billable operations
-5. Follow the Transistor pattern: LLM emits opinion → Rust judge decides
-
-## Quick Commands
+## Canonical Commands
 
 ```bash
-# Validate all contracts
 ./scripts/validate-contracts.sh
-
-# Run integration smoke test
-./scripts/smoke.sh
-
-# Check PM2 services
-pm2 status
-
-# View logs
-pm2 logs <service> --lines 50
+./scripts/security-scan.sh
+./scripts/verify-operations.sh
+doppler run --project logline-ecosystem --config dev -- ./scripts/smoke-obs-api-auth.sh
 ```
+
+## When Editing
+
+- If touching `contracts/*`, `policy/*`, or OpenAPI: run contract validation.
+- If touching auth/service-to-service: assume `Doppler` and Supabase JWT are the norm.
+- If touching Supabase-backed behavior: think in terms of remote project, migrations, RLS, Realtime.
+- If touching docs for agents: optimize for minimal tokens, imperative wording, no prose.
+
+## Next File
+
+- Open the service-local `LLM_START_HERE.md` for the service you will edit.
