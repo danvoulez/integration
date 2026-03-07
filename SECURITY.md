@@ -77,6 +77,10 @@ PRs touching these paths:
 - Require security scan pass
 - Trigger supply-chain guardrails workflow
 
+Repository guardrails for `main` are prepared to run on both `pull_request` and
+`merge_group`. After the updated workflows reach the default branch, enable the
+GitHub ruleset/merge queue so these scans become blocking instead of advisory.
+
 ### 5) Code247 Security Controls
 
 The autonomous coding agent has explicit guardrails:
@@ -132,8 +136,9 @@ If a security incident is suspected:
 logline secrets doctor
 
 # Check for dependency vulnerabilities
-cargo audit                    # Rust
-npm audit                      # Node.js
+./scripts/security-scan.sh     # Rust + Node.js lockfiles
+cargo audit                    # Rust (low-level)
+npm audit                      # Node.js (low-level)
 
 # Verify RLS policies
 logline db verify-rls

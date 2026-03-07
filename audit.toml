@@ -1,0 +1,6 @@
+[advisories]
+ignore = [
+  # Transitive via jsonwebtoken 10 in logline-auth/logline-cli. No fixed upstream
+  # version exists yet; keep visible in version control instead of hiding it in CI.
+  "RUSTSEC-2023-0071",
+]

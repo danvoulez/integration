@@ -13,6 +13,7 @@ tags:
   - name: Timeline
   - name: Traces
   - name: Runs
+  - name: Code247
   - name: Dashboards
   - name: Fuel
   - name: Capabilities
@@ -165,6 +166,46 @@ paths:
         '404':
           $ref: '#/components/responses/Error404'
 
+  /api/v1/code247/stage-telemetry:
+    get:
+      tags: [Code247]
+      summary: Get Code247 stage latency and cost telemetry
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 30 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - in: query
+          name: tenant_id
+          schema: { type: string }
+        - in: query
+          name: app_id
+          schema: { type: string }
+        - in: query
+          name: issue_id
+          schema: { type: string }
+        - in: query
+          name: stage
+          schema: { type: string, enum: [plan, code, review, ci, merge, deploy] }
+      responses:
+        '200':
+          description: Stage telemetry payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
   /api/v1/dashboards/summary:
     get:
       tags: [Dashboards]
@@ -224,6 +265,12 @@ paths:
         - in: query
           name: app_id
           schema: { type: string }
+        - in: query
+          name: policy_version
+          schema: { type: string }
+        - in: query
+          name: precision_level
+          schema: { type: string, enum: [L0, L1, L2, L3] }
       responses:
         '200':
           description: Fuel dashboard payload
@@ -259,6 +306,12 @@ paths:
           name: app_id
           schema: { type: string }
         - in: query
+          name: policy_version
+          schema: { type: string }
+        - in: query
+          name: precision_level
+          schema: { type: string, enum: [L0, L1, L2, L3] }
+        - in: query
           name: source
           schema: { type: string }
         - in: query
@@ -270,6 +323,146 @@ paths:
       responses:
         '200':
           description: Fuel reconciliation payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/fuel/alerts:
+    get:
+      tags: [Fuel, Alerts]
+      summary: Materialize and list open Fuel alerts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200 }
+        - in: query
+          name: tenant_id
+          schema: { type: string }
+        - in: query
+          name: app_id
+          schema: { type: string }
+        - in: query
+          name: policy_version
+          schema: { type: string }
+      responses:
+        '200':
+          description: Fuel alerts payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/fuel/calibration:
+    get:
+      tags: [Fuel]
+      summary: Get Fuel calibration analysis for k_latency, k_errors and k_energy
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 90 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: tenant_id
+          schema: { type: string }
+        - in: query
+          name: app_id
+          schema: { type: string }
+        - in: query
+          name: policy_version
+          schema: { type: string }
+      responses:
+        '200':
+          description: Fuel calibration payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
+  /api/v1/fuel/ops:
+    get:
+      tags: [Fuel]
+      summary: Get recurring Fuel baseline and alert job evidence
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 30 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - in: query
+          name: tenant_id
+          schema: { type: string }
+        - in: query
+          name: app_id
+          schema: { type: string }
+        - in: query
+          name: policy_version
+          schema: { type: string }
+      responses:
+        '200':
+          description: Fuel ops payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+    post:
+      tags: [Fuel]
+      summary: Materialize recurring Fuel baseline and alert jobs
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job_name:
+                  type: string
+                  enum: [baseline_snapshot, alerts_snapshot, baseline_and_alerts]
+                reference_time:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Fuel ops materialization payload
           content:
             application/json:
               schema:

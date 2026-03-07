@@ -1,23 +1,16 @@
 # Tasklist Geral do Ecossistema
 
-**Updated:** 2026-03-06  
-**Foco do ciclo atual:** hardening backend + fechar lacunas de integração (`code247`, `llm-gateway`, `logic/CLI`)  
+**Updated:** 2026-03-07  
+**Foco do ciclo atual:** hardening backend + fechar lacunas de integração e debug (`code247`, `edge-control`, `llm-gateway`, `fuel/obs-api`, `logic/CLI`)  
 **Regra do ciclo:** UI por último, depois de contratos/gates/testes severos estarem verdes.
 
 ## 1) Backlog Ativo (somente pendências)
 
 ### 1.1 P0 - Bloqueios para Code247 aceitar carga séria
 - [ ] C247-RDY-001: Fechar authn/authz completo em `/intentions*`, `/jobs`, webhooks e workers com JWT + project scope (substituir token único legado).
-- [ ] C247-RDY-002: Consolidar validador único de transição/evidência (sem bypass) reutilizado por intake, sync, polling e webhook path.
-- [ ] C247-RDY-003: Completar merge policy `light/substantial` com override auditável explícito e trilha de decisão persistida.
-- [x] C247-RDY-004: Enforçar allowlist de comandos do runner por repo (fail-closed para comando fora de policy).
-- [x] C247-RDY-005: Tornar `plan + AC + risco + backout + evidências` obrigatório para toda execução antes de PR mergeável.
-- [ ] C247-RDY-006: Fechar integração de testes de estado (`G-007-P5/P6`) com prova em CI (positivo + negativo + smoke E2E).
 - [ ] C247-RDY-007: Ativar merge queue (`merge_group`) em repositórios críticos para evitar green-on-stale.
 - [ ] C247-RDY-008: Tornar security scan obrigatório para repos críticos antes de merge substantial.
-- [ ] C247-RDY-009: Implementar retries/backoff + circuit breaker para Linear/GitHub/CI.
-- [ ] C247-RDY-010: Implementar watchdog de stuck jobs com timeout por etapa e auto-escalonamento.
-- [ ] C247-RDY-011: Expor telemetria de latência/custo por etapa (`plan/code/review/ci/merge/deploy`) no obs-api.
+- [x] C247-RDY-011: Expor telemetria de latência/custo por etapa (`plan/code/review/ci/merge/deploy`) no obs-api.
 
 ### 1.2 P0 - Hardening central (cross-app)
 - [ ] G-001: Fechar round-trip único `manifest.intentions -> Code247 -> Linear -> pipeline -> PR/merge -> deploy` com rastreabilidade fim-a-fim.
@@ -27,41 +20,28 @@
 - [ ] G-015: Subir `edge-control.logline.world` como control-plane oficial no LAB 8GB em modo operacional estável.
 - [ ] G-030: Alinhar contratos OpenAPI com topologia canônica (remover drift de host/porta, ex.: `edge-control` localhost `8080` vs runtime `18080`).
 
-### 1.3 P1 - Fuel econômico e homeostase (backend)
-- [x] G-021: Integrar reconciliação cloud real (`usd_settled`) via APIs dos providers (OpenAI/Anthropic) com idempotência e retries.
-- [x] G-022: Implementar medição de energia local (Qwen2/Ollama) com `confidence` explícita e método auditável.
-- [ ] G-024: Fechar alertas Fuel no `obs-api` (pressão latência/erro/energia, drift e cobertura L0-L3 com thresholds operacionais).
-- [ ] G-024-C: Materializar jobs recorrentes de baseline/alerts com evidência operacional diária.
+### 1.3 P0 - edge-control produção distribuída
+Sem pendências abertas nesta frente; próximo gate é validar multi-instance em `TST-011`.
 
-### 1.4 P1 - LLM Gateway (pendências reais)
-- [x] LLM-001: Redução adicional de latência local (cache/roteamento/warm state) com alvo p95 definido por modo.
-- [x] LLM-005: Garantir envelope padrão em todos endpoints JSON (não só chat), incluindo erros canônicos.
-- [x] LLM-006: Unificar API key legado com JWT Supabase sem ambiguidade operacional (modo compat controlado + sunset).
-- [x] LLM-007: Persistir requests normalizadas em `llm_requests` (request_id + plan_id + provider/model/mode).
-- [x] LLM-008: Publicar contrato formal gateway->code247 (incluindo campos de CI target e fallback behavior).
-- [x] LLM-009: Emitir fuel events para Supabase como fonte primária e remover dependência operacional de SQLite local.
-- [x] LLM-010: Publicar `manifest.intentions.json` após cada release do gateway para manter sincronização oficial com Linear/Code247.
+### 1.4 P1 - Fuel econômico e homeostase (backend)
+Sem pendências abertas nesta frente.
 
-### 1.5 P1 - Logic / CLI (pendências reais)
-- [x] LOGIC-001: Consolidar `CLI + runtime` para publicar intentions e sync status automaticamente.
-- [x] LOGIC-002: Garantir contratos policy/gates consumíveis pelo Code247 sem adapter ad-hoc.
-- [x] LOGIC-003: Padronizar outputs de execução para auditoria/replay (shape estável).
-- [x] LOGIC-007: Publicar e manter `manifest.intentions.json` + linkage `.code247/linear-meta.json` em fluxo padrão de release.
-- [x] LOGIC-008: Garantir geração de cookbook a partir de catálogo canônico em pipeline (não manual).
-- [x] LOGIC-009: Harden auth policies do workspace (SEC/HARD items) e garantir publicação de atualizações de schema via `logline-supabase`.
-- [x] LOGIC-010: Manter `workspace.manifest` schemas sincronizados com Canon AST e geração TypeScript derivada do Rust (sem drift).
+### 1.5 P1 - LLM Gateway (pendências reais)
+- [ ] LLM-012: Rodar smoke autenticado em CI cobrindo fluxos JWT e compat mode até sunset completo.
 
-### 1.6 P1 - Obs API (backend, sem UI nova)
+### 1.6 P1 - Logic / CLI (pendências reais)
+- [ ] LOGIC-013: Estender o relatório operacional consolidado com round-trip por intenção quando `OBS-001` estiver disponível.
+
+### 1.7 P1 - Obs API (backend, sem UI nova)
 - [ ] OBS-001: Expor backend de round-trip por intenção (`intake`, `linear`, `ci`, `pr`, `merge`, `deploy`) para consumo futuro da UI.
 - [ ] OBS-002: Fechar alertas de `stuck job`, `stale intention` e `sync failure` com ack/resolution auditável.
-- [ ] OBS-014: Cobrir endpoints novos com testes de contrato e smoke autenticado em CI.
 
-### 1.7 P2 - Onboarding ecossistema (depois do core estável)
+### 1.8 P2 - Onboarding ecossistema (depois do core estável)
 - [ ] VVC-001: Publicar intentions + sync + linkage no fluxo padrão (`voulezvous-tv-codex`).
 - [ ] VVP-001: Publicar intentions + CI/deploy sync + gates substantial (`VoulezvousPlataforma`).
 - [ ] ONB-001: Padronizar template único de onboarding para qualquer novo app entrar no ciclo Code247/Linear/Fuel.
 
-### 1.8 P3 - UI por último
+### 1.9 P3 - UI por último
 - [ ] UI-001: Implementar toggle `Realtime | Estatística` consumindo apenas endpoints reais (`/api/v1/fuel/dashboard`, `/api/v1/fuel/reconciliation`).
 - [ ] UI-002: Implementar visual de round-trip por intenção consumindo backend `OBS-001`.
 - [ ] UI-003: Remover 100% dos mocks e bloquear PR de UI que introduza dado simulado fora de story/test.
@@ -74,75 +54,51 @@
 - [ ] PX-003: Nenhum merge sem teste local + evidência anexada no PR (`comando`, `resultado`, `impacto`).
 - [ ] PX-004: Integração em 2 janelas fixas por dia (meio do dia e fim do dia), sem rebase destrutivo.
 
-### 2.2 Agent A - Code247 Governance Hardening
-**Escopo:** `code247.logline.world/*` (+ ajustes mínimos em contrato quando necessário)  
-**Objetivo:** tornar Code247 apto para execução contínua com segurança operacional.
+### 2.2 Agent A - Code247 + Edge Governance Hardening
+**Escopo:** `code247.logline.world/*`, `edge-control.logline.world/*` (+ ajustes mínimos em contrato quando necessário)  
+**Objetivo:** tornar Code247 e o control-plane aptos para execução contínua com segurança operacional.
 
 - [ ] A-001: `C247-RDY-001` JWT+scope completo nas rotas críticas.
-- [ ] A-002: `C247-RDY-002` validador único de transição/evidência sem bypass.
-- [x] A-003: `C247-RDY-004` allowlist de comandos runner (fail-closed).
-- [x] A-004: `C247-RDY-005` evidência obrigatória completa.
-- [ ] A-005: testes integração de estado (`Ready -> In Progress -> Ready for Release -> Done`) com negativos.
-- [ ] A-006: smoke E2E com Linear sandbox + payloads inválidos (prova de bloqueio).
-- [ ] A-007: `C247-RDY-007/008` merge queue + security scan obrigatório para repos críticos.
-- [ ] A-008: `C247-RDY-009/010` retries/backoff/circuit breaker + watchdog de stuck jobs.
-- [ ] A-009: `C247-RDY-011` telemetria de etapa emitida e validada no obs-api.
+- [ ] A-005: `C247-RDY-007/008` merge queue + security scan obrigatório para repos críticos.
+- [ ] A-007: `C247-RDY-012` timeline operacional do `Code247` validada no obs-api (telemetria de etapa já exposta em `/api/v1/code247/stage-telemetry`).
 
-**DoD Agent A:** estado e merge policy protegidos por validação central + testes verdes + logs auditáveis.
+**DoD Agent A:** estado, merge policy e control-plane protegidos por validação central + testes verdes + logs auditáveis.
 
-### 2.3 Agent B - LLM Gateway + Fuel Settlement
-**Escopo:** `llm-gateway.logline.world/*`, `logic.logline.world/supabase/migrations/*` (fuel settlement), integração com obs-api ingest.  
-**Objetivo:** reduzir latência local e tornar custo/settlement confiável.
+### 2.3 Agent B - Fuel + Obs Economics
+**Escopo:** `llm-gateway.logline.world/*`, `logic.logline.world/supabase/migrations/*`, `obs-api.logline.world/*` para Fuel/telemetria econômica.  
+**Objetivo:** fechar a camada econômica com alertas, calibração e observabilidade útil para operação.
 
-- [x] B-001: `LLM-001` otimização extra de p95/p99 local com métricas antes/depois.
-- [x] B-002: `LLM-005` envelope padrão em todos endpoints JSON.
-- [x] B-003: `LLM-007` persistência completa em `llm_requests`.
-- [x] B-004: `G-021` reconciler cloud provider (OpenAI/Anthropic) com idempotência/backoff.
-- [x] B-005: `G-022` energia local + confidence em valuation.
-- [x] B-006: testes de carga curta (burst) e testes de degradação (provider timeout/fallback).
-- [x] B-007: `LLM-009` Fuel Supabase como fonte primária (retirar dependência operacional de SQLite).
-- [x] B-008: `LLM-010` intention manifest pós-release integrado ao fluxo oficial.
+Sem pendências abertas no escopo do Agent B.
 
-**DoD Agent B:** latência local melhorada com prova, reconciliação cloud funcionando, telemetria econômica confiável.
+**DoD Agent B:** alertas e calibração de Fuel operacionais, com segmentação por policy e visibilidade útil no obs-api.
 
 ### 2.4 Agent C - Logic CLI + Integration Harness
 **Escopo:** `logic.logline.world/*`, `scripts/*`, `contracts/*` (somente catálogo/cookbook/harness), suporte a `obs-api` para testes de contrato.  
 **Objetivo:** transformar CLI em backbone operacional e fechar test harness severo de integração.
 
-- [x] C-001: `LOGIC-001/002/003` fluxo CLI/runtime padronizado para intentions/sync/replay.
-- [x] C-002: `LOGIC-008` cookbook gerado automaticamente a partir de catálogo canônico.
-- [x] C-003: criar suíte `integration-severe` com cenários multi-serviço (ver seção 3).
-- [x] C-004: automatizar `smoke + contracts + integration-severe` em pipeline único.
-- [x] C-005: gerar relatório final por execução (`request_id`, traces críticos, falhas e regressões).
-- [x] C-006: `LOGIC-009/010` hardening de auth policy + sync Canon AST -> schemas/TypeScript sem drift.
+- [ ] C-001: `G-001` round-trip único `manifest.intentions -> Code247 -> Linear -> pipeline -> PR/merge -> deploy` com rastreabilidade fim-a-fim.
+- [ ] C-002: `G-004` auth service-to-service unificada (JWT + escopo de projeto) em todos os serviços centrais.
+- [ ] C-003: `G-030` alinhar contratos OpenAPI com topologia canônica e remover drift de host/porta.
+- [ ] C-004: `OBS-001` backend de round-trip por intenção para consumo futuro da UI.
+- [ ] C-006: `LLM-012` smoke autenticado do gateway cobrindo JWT e compat mode até sunset.
 
 **DoD Agent C:** execução de ponta a ponta acionável por um comando, com relatório auditável.
 
-## 3) Testes Severos de Integração (obrigatórios)
+## 3) Testes Severos de Integração (pendências novas)
 
-### 3.1 Matriz de cenários críticos
-- [x] TST-001: E2E feliz completo (`intentions -> Linear -> Code247 -> PR -> merge -> sync -> state final`).
-- [x] TST-002: Tentativa de `Done` sem evidência (deve bloquear com erro determinístico e evento auditável).
-- [x] TST-003: Webhook duplicado/replay (`Linear-Delivery`) não pode duplicar job/ação.
-- [x] TST-004: Falha de provider LLM local e fallback controlado sem quebrar tracing.
-- [x] TST-005: `red-main` ativo bloqueia novas execuções até recuperação.
-- [x] TST-006: `flaky check` (falha+rerun+falha) marca `blocked: ci` corretamente.
-- [x] TST-007: drift Fuel anômalo gera alerta e não altera estado sem gate.
-- [x] TST-008: tokens/secrets inválidos nos serviços críticos falham de forma segura (sem bypass silencioso).
-- [x] TST-009: reconciliação `estimated vs settled` com divergência acima de threshold gera incidente.
-- [x] TST-010: caos leve de rede (timeout/intermitência) preserva idempotência e consistência final.
+### 3.1 Novos cenários obrigatórios
+- [ ] TST-011: validar `edge-control` com JWKS real + idempotência persistente em cenário restart/multi-instance.
+- [ ] TST-012: falha/intermitência de Linear/GitHub preserva timeline, fila assíncrona e sinais operacionais do Code247.
+- [ ] TST-013: `policy_version` segmentada por tenant/app não mistura cálculo de Fuel entre tenants.
 
-### 3.2 Gate de aceitação da suíte severa
-- [x] TST-GATE-001: nenhum cenário crítico pode ficar sem teste automatizado.
-- [x] TST-GATE-002: PR que altera estado/contrato/fuel sem atualizar testes severos deve falhar.
-- [x] TST-GATE-003: relatório de execução severa anexado em todo merge do eixo central.
+### 3.2 Gate incremental
+- [ ] TST-GATE-004: qualquer mudança em `Code247 timeline`, `edge-control auth/idempotency` ou `Fuel policy_version` deve adicionar teste severo correspondente.
 
-Status execução Agent C (2026-03-06): `./scripts/integration-severe.sh` gera `artifacts/integration-severe-report.json` com gate fail-closed ativo e suíte severa totalmente verde (`step_failures=0`, `scenario_failures=0`).
+Status atual (2026-03-06): `./scripts/integration-severe.sh` segue verde no baseline atual e novos cenários acima passam a ser obrigatórios para o próximo ciclo.
 
 ## 4) Definition of Done (ciclo atual)
 - [ ] DOD-001: Code247 apto a receber tasks contínuas sem intervenção manual fora dos checkpoints definidos.
 - [ ] DOD-002: auth service-to-service unificada em todos os serviços centrais.
-- [x] DOD-003: reconciliação Fuel cloud + energia local habilitadas com precisão explícita.
 - [ ] DOD-004: suíte severa de integração rodando em CI e bloqueando regressão.
 - [ ] DOD-005: UI inicia apenas após backend contracts/gates/testes estarem estáveis.
 
@@ -160,17 +116,66 @@ Status execução Agent C (2026-03-06): `./scripts/integration-severe.sh` gera `
 - [x] OpenAPI publicado/validado nos serviços principais e validador global ativo.
 - [x] Contratos canônicos publicados: events registry, policy-set, schemas e OpenAPI de edge/inference.
 
+### Testes severos e CI
+- [x] Suíte `integration-severe` implementada com gate fail-closed e relatório auditável por execução.
+- [x] Workflows críticos preparados para `merge_group` e `security-scan` unificado versionado no monorepo (`scripts/security-scan.sh` + artifact em CI); falta apenas aplicar o ruleset remoto no GitHub para fechar `C247-RDY-007/008`.
+- [x] Cenários críticos cobrindo E2E feliz, bloqueio de `Done` sem evidência, replay/idempotência, fallback LLM, `red-main`, flaky CI, drift Fuel, auth inválido e caos leve de rede.
+- [x] Gate de CI exigindo atualização de testes severos quando estado/contrato/fuel são alterados.
+
 ### Code247 + Linear
 - [x] Intake `/intentions`, sync `/intentions/sync`, auto-claim e workflow Linear oficial integrados.
 - [x] Gate de evidência para avanço de estado implementado (incluindo bloqueio de transições inválidas relevantes).
 - [x] Webhook hardening (assinatura, anti-replay, idempotência, DLQ/retry) implementado.
+- [x] Allowlist de comandos do runner por repo enforçada em modo fail-closed.
+- [x] Evidência obrigatória (`plan + AC + risco + backout + evidências`) exigida antes de PR mergeável.
+- [x] Validador canônico de transição/evidência consolidado e reutilizado em intake, sync, polling e webhook path.
+- [x] `code247_run_timeline` e outbox assíncrona de ações do Linear com retry/DLQ habilitados para troubleshooting operacional.
+- [x] Emissão de `REVIEW_LOOP_EXHAUSTED` e governança de plano configurável por policy ativadas no pipeline.
+- [x] Merge policy `light/substantial` com override auditável explícito e trilha de decisão persistida no pipeline/evidence store.
+- [x] Lease/deadline/heartbeat por etapa com sweeper horizontal de expiração e auto-escalonamento fail-closed para jobs presos.
+- [x] Claim atômico de `PENDING -> PLANNING` com lease no storage, eliminando janela de double execution entre instâncias.
+- [x] Smoke oficial `scripts/smoke-code247-stage-lease.sh` adicionando prova runtime de expiração de lease com evento único e sem poluir Linear.
+- [x] Resilience layer compartilhada com retries/backoff + circuit breaker aplicada às integrações críticas de `llm-gateway`, `Linear OAuth/GraphQL` e `GitHub PR/status/merge`.
+- [x] Testes HTTP integrados de governança de estado (`/intentions` + `/intentions/sync`) cobrindo `In Progress -> Ready for Release`, bloqueio de `In Progress -> Done` e `Ready for Release -> Done`, com gate oficial em CI.
+- [x] Telemetria de latência/custo por etapa do `Code247` exposta no `obs-api` em `/api/v1/code247/stage-telemetry`, com smoke autenticado cobrindo acesso via JWT.
+
+### edge-control
+- [x] Serviço de control-plane funcional com auth, request id, rate-limit e middleware de idempotência.
+- [x] Endpoints `/v1/intention/draft`, `/v1/pr/risk`, `/v1/fuel/diff/route` publicados com envelopes canônicos.
+- [x] Policy engine com `policy-set.v1.1.json` e emissão de `GateDecision.v1` integrado ao fluxo.
+- [x] JWT via JWKS real, contract tests dos handlers críticos e resilience layer downstream habilitados.
+- [x] Idempotência persistida em backend compartilhado via Supabase RPC, com fallback SQLite apenas para dev/teste local.
+
+### LLM Gateway
+- [x] Redução adicional de latência local com alvo operacional por modo.
+- [x] Envelope padrão aplicado nos endpoints JSON e erros canônicos.
+- [x] Compatibilidade controlada entre API key legado e JWT Supabase com trilha de sunset.
+- [x] Persistência normalizada em `llm_requests` com provider/model/mode.
+- [x] Contrato formal gateway -> Code247 publicado.
+- [x] Fuel Supabase tornado fonte primária, sem dependência operacional de SQLite local.
+- [x] Publicação de `manifest.intentions.json` pós-release integrada ao fluxo oficial.
+- [x] Métricas operacionais por modo/provider, incluindo fallback, timeout e custo efetivo, expostas via `obs-api`.
 
 ### Fuel e observabilidade
 - [x] Camada de valuation + points (`fuel_valuations`, `fuel_points_v1`) e guardrails de metadata em produção.
 - [x] Baseline sazonal e dashboard backend Fuel (`/api/v1/fuel/dashboard`) ativos.
 - [x] Backend de reconciliação Fuel (`/api/v1/fuel/reconciliation`) ativo com segmentação por app/source/provider/model.
+- [x] Reconciliação cloud real (`usd_settled`) via providers com idempotência e retries.
+- [x] Medição de energia local com `confidence` explícita e método auditável.
+- [x] Alertas Fuel, jobs recorrentes de baseline/ops, calibração dos `k_*` e segmentação de `policy_version` por tenant/app publicados no backend.
+- [x] Dashboard/reconciliation com cortes por `policy_version` e `precision_level` habilitados para análise operacional.
+- [x] Smoke autenticado do `obs-api` validando `dashboard`, `alerts`, `calibration`, `reconciliation`, `ops` e materialização remota no Supabase, com gate reutilizável em CI via Doppler.
+- [x] Objetivo de Fuel do ciclo atual (`DOD-003`) alcançado: alertas, calibração e segmentação observáveis por tenant/app.
 
 ### CLI e catálogo canônico
 - [x] `logline catalog export` implementado.
 - [x] Catálogo unificado CLI+API gerado em `contracts/generated/capability-catalog.v1.json`.
 - [x] Endpoint de catálogo no `obs-api` (`/api/v1/capabilities/catalog`) publicado para abastecer cookbook/UI.
+- [x] Entry point oficial `./scripts/verify-operations.sh` criado para `smoke + sync-canon check + cookbook + contracts + integration-severe`.
+- [x] Relatório operacional consolidado com artefatos e caminhos de rastreabilidade publicado em `artifacts/operations-verify-report.{json,md}`.
+- [x] Fluxo CLI/runtime padronizado para publicar intentions, sync status e replay.
+- [x] Contratos policy/gates consumíveis pelo Code247 sem adapter ad-hoc.
+- [x] Outputs de execução estabilizados para auditoria/replay.
+- [x] Publicação de `manifest.intentions.json` + linkage `.code247/linear-meta.json` em fluxo padrão de release.
+- [x] Cookbook gerado automaticamente a partir de catálogo canônico.
+- [x] Hardening de auth policies do workspace e sync Canon AST -> schemas/TypeScript sem drift.

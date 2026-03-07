@@ -31,6 +31,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `GET /api/v1/timeline/:intentionId` | Timeline by intention |
 | `GET /api/v1/traces/:traceId` | Trace tree by causal ID |
 | `GET /api/v1/runs/:runId` | Run projection |
+| `GET /api/v1/code247/stage-telemetry` | Latência/custo por etapa do pipeline |
 | `GET /api/v1/fuel/dashboard` | Fuel metrics |
 | `GET /api/v1/dashboards/summary` | Operator summary |
 | `GET /api/health` | Health check |
@@ -89,6 +90,18 @@ npm run build        # Production build
 npm run typecheck    # Type checking
 npm run lint         # Linting
 ```
+
+## Authenticated Smoke
+
+```bash
+cd /Users/ubl-ops/Integration
+doppler run -- ./scripts/smoke-obs-api-auth.sh
+```
+
+O smoke sobe o `obs-api` localmente, emite JWT HS256 com escopos `obs:read` e `obs:alerts:ack`, valida os endpoints Fuel principais e grava:
+
+- `/Users/ubl-ops/Integration/artifacts/obs-api-auth-smoke-report.json`
+- `/Users/ubl-ops/Integration/artifacts/obs-api-auth-smoke.log`
 
 ## Related Docs
 
