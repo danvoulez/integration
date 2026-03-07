@@ -18,6 +18,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     to: req.nextUrl.searchParams.get('to') ?? undefined,
     tenant_id: req.nextUrl.searchParams.get('tenant_id') ?? undefined,
     app_id: req.nextUrl.searchParams.get('app_id') ?? undefined,
+    policy_version: req.nextUrl.searchParams.get('policy_version') ?? undefined,
+    precision_level: req.nextUrl.searchParams.get('precision_level') ?? undefined,
   });
 
   if (!parsedQuery.success) {

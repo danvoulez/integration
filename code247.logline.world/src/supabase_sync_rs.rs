@@ -335,20 +335,23 @@ async fn broadcast_job_status(
     config: &SupabaseSyncConfig,
     job: &Code247JobMirror,
 ) -> Result<()> {
-    let channel = config
+    let topic = config
         .realtime_channel
         .replace("{tenant_id}", config.tenant_id.as_str());
     let stage = stage_from_status(&job.status);
     let body = json!({
-        "channel": channel,
-        "event": "job_status",
-        "payload": {
-            "job_id": job.id,
-            "status": job.status,
-            "stage": stage,
-            "error": job.last_error,
-            "timestamp": job.updated_at,
-        }
+        "messages": [{
+            "topic": topic,
+            "event": "job_status",
+            "payload": {
+                "job_id": job.id,
+                "status": job.status,
+                "stage": stage,
+                "error": job.last_error,
+                "timestamp": job.updated_at,
+            },
+            "private": false,
+        }]
     });
 
     let resp = client

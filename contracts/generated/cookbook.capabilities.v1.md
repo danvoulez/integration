@@ -1,12 +1,12 @@
 # Cookbook Canônico (Gerado)
 
-Gerado em: `2026-03-06T11:13:33.826Z`
+Gerado em: `2026-03-06T15:04:23.199Z`
 Fonte: `contracts/generated/capability-catalog.v1.json`
 
 ## Resumo
-- Total de capacidades: **127**
+- Total de capacidades: **131**
 - CLI: **80**
-- API: **47**
+- API: **51**
 
 ## Capacidades CLI
 
@@ -156,7 +156,10 @@ Fonte: `contracts/generated/capability-catalog.v1.json`
 | `GET` | `/api/v1/auth/whoami` | Resolve current user and memberships |
 | `GET` | `/api/v1/capabilities/catalog` | Get canonic capability catalog for CLI + APIs |
 | `GET` | `/api/v1/dashboards/summary` | Get cross-app dashboard summary |
+| `GET` | `/api/v1/fuel/alerts` | Materialize and list open Fuel alerts |
+| `GET` | `/api/v1/fuel/calibration` | Get Fuel calibration analysis for k_latency, k_errors and k_energy |
 | `GET` | `/api/v1/fuel/dashboard` | Get Fuel dashboard payload (Realtime + Estatistica) |
+| `GET` | `/api/v1/fuel/ops` | Get recurring Fuel baseline and alert job evidence |
 | `GET` | `/api/v1/fuel/reconciliation` | Get Fuel reconciliation payload (coverage + drift + segmentação) |
 | `GET` | `/api/v1/runs/{runId}` | Get projected run state |
 | `GET` | `/api/v1/timeline/{intentionId}` | Get timeline by intention |
@@ -166,6 +169,7 @@ Fonte: `contracts/generated/capability-catalog.v1.json`
 | `POST` | `/api/v1/auth/onboard/claim` | Claim memberships from allowlist |
 | `POST` | `/api/v1/auth/tenant/resolve` | Resolve tenant by slug |
 | `POST` | `/api/v1/events/ingest` | Ingest operational event |
+| `POST` | `/api/v1/fuel/ops` | Materialize recurring Fuel baseline and alert jobs |
 
 ## Uso Operacional
 - Atualizar catálogo: `node scripts/generate-capability-catalog.mjs`

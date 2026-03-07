@@ -53,6 +53,17 @@ impl JobStatus {
             _ => JobStatus::Pending,
         }
     }
+
+    pub fn has_stage_lease(self) -> bool {
+        matches!(
+            self,
+            JobStatus::Planning
+                | JobStatus::Coding
+                | JobStatus::Reviewing
+                | JobStatus::Validating
+                | JobStatus::Committing
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +73,20 @@ pub struct Job {
     pub status: JobStatus,
     pub payload: String,
     pub retries: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobLeaseRecord {
+    pub id: String,
+    pub issue_id: String,
+    pub status: JobStatus,
+    pub last_error: Option<String>,
+    pub stage_started_at: Option<String>,
+    pub heartbeat_at: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub lease_owner: Option<String>,
+    pub stage_attempt: i32,
+    pub updated_at: String,
 }
 
 #[derive(Clone)]
@@ -91,6 +116,11 @@ impl SqliteDb {
                 payload TEXT NOT NULL,
                 retries INTEGER NOT NULL DEFAULT 0,
                 last_error TEXT,
+                stage_started_at TEXT,
+                heartbeat_at TEXT,
+                lease_expires_at TEXT,
+                lease_owner TEXT,
+                stage_attempt INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -160,7 +190,95 @@ impl SqliteDb {
                 processed_at TEXT,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS linear_action_outbox (
+                id TEXT PRIMARY KEY,
+                issue_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                status TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at TEXT NOT NULL,
+                last_error TEXT,
+                created_at TEXT NOT NULL,
+                processed_at TEXT,
+                updated_at TEXT NOT NULL
+            );
+            CREATE VIEW IF NOT EXISTS code247_run_timeline AS
+                SELECT
+                    jobs.id AS job_id,
+                    jobs.issue_id AS issue_id,
+                    'job_created' AS event_kind,
+                    jobs.status AS stage,
+                    jobs.status AS status,
+                    jobs.payload AS detail,
+                    jobs.created_at AS created_at
+                FROM jobs
+                UNION ALL
+                SELECT
+                    jobs.id AS job_id,
+                    jobs.issue_id AS issue_id,
+                    'job_status' AS event_kind,
+                    jobs.status AS stage,
+                    jobs.status AS status,
+                    COALESCE(jobs.last_error, '') AS detail,
+                    jobs.updated_at AS created_at
+                FROM jobs
+                UNION ALL
+                SELECT
+                    checkpoints.job_id AS job_id,
+                    jobs.issue_id AS issue_id,
+                    'checkpoint' AS event_kind,
+                    checkpoints.stage AS stage,
+                    NULL AS status,
+                    checkpoints.data AS detail,
+                    checkpoints.created_at AS created_at
+                FROM checkpoints
+                LEFT JOIN jobs ON jobs.id = checkpoints.job_id
+                UNION ALL
+                SELECT
+                    execution_log.job_id AS job_id,
+                    jobs.issue_id AS issue_id,
+                    'execution' AS event_kind,
+                    execution_log.stage AS stage,
+                    NULL AS status,
+                    COALESCE(execution_log.output, execution_log.input, '') AS detail,
+                    execution_log.created_at AS created_at
+                FROM execution_log
+                LEFT JOIN jobs ON jobs.id = execution_log.job_id
+                UNION ALL
+                SELECT
+                    linear_action_outbox.id AS job_id,
+                    linear_action_outbox.issue_id AS issue_id,
+                    'linear_outbox' AS event_kind,
+                    linear_action_outbox.action_type AS stage,
+                    linear_action_outbox.status AS status,
+                    COALESCE(linear_action_outbox.last_error, linear_action_outbox.payload, '') AS detail,
+                    linear_action_outbox.updated_at AS created_at
+                FROM linear_action_outbox;
             ",
+        )?;
+        self.ensure_jobs_column("stage_started_at", "TEXT")?;
+        self.ensure_jobs_column("heartbeat_at", "TEXT")?;
+        self.ensure_jobs_column("lease_expires_at", "TEXT")?;
+        self.ensure_jobs_column("lease_owner", "TEXT")?;
+        self.ensure_jobs_column("stage_attempt", "INTEGER NOT NULL DEFAULT 0")?;
+        Ok(())
+    }
+
+    fn ensure_jobs_column(&self, name: &str, definition: &str) -> Result<()> {
+        let exists = {
+            let conn = self.conn.lock().expect("db lock");
+            let mut stmt = conn.prepare("PRAGMA table_info(jobs)")?;
+            let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+            let names = columns.flatten().collect::<Vec<_>>();
+            names.iter().any(|column| column == name)
+        };
+        if exists {
+            return Ok(());
+        }
+        self.conn.lock().expect("db lock").execute(
+            &format!("ALTER TABLE jobs ADD COLUMN {name} {definition}"),
+            [],
         )?;
         Ok(())
     }
@@ -176,29 +294,232 @@ impl JobsRepository {
         Self { conn, sync }
     }
 
-    pub fn next_pending(&self) -> Option<Job> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.query_row(
-            "SELECT id, issue_id, status, payload, retries FROM jobs WHERE status='PENDING' ORDER BY created_at ASC LIMIT 1",
-            [],
-            |row| {
-                Ok(Job {
-                    id: row.get(0)?,
-                    issue_id: row.get(1)?,
-                    status: JobStatus::from_db(&row.get::<_, String>(2)?),
-                    payload: row.get(3)?,
-                    retries: row.get(4)?,
-                })
-            },
-        ).ok()
+    pub fn claim_next_pending_with_lease(
+        &mut self,
+        lease_owner: &str,
+        lease_timeout_seconds: i64,
+    ) -> Option<Job> {
+        loop {
+            let candidate = {
+                let conn = self.conn.lock().expect("db lock");
+                conn.query_row(
+                    "SELECT id, issue_id, payload, retries
+                     FROM jobs
+                     WHERE status='PENDING'
+                     ORDER BY created_at ASC
+                     LIMIT 1",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, i32>(3)?,
+                        ))
+                    },
+                )
+                .ok()
+            };
+
+            let Some((id, issue_id, payload, retries)) = candidate else {
+                return None;
+            };
+
+            let now = Utc::now();
+            let changed = self
+                .conn
+                .lock()
+                .expect("db lock")
+                .execute(
+                    "UPDATE jobs
+                     SET status=?,
+                         last_error=NULL,
+                         updated_at=?,
+                         stage_started_at=?,
+                         heartbeat_at=?,
+                         lease_expires_at=?,
+                         lease_owner=?,
+                         stage_attempt=COALESCE(stage_attempt, 0) + 1
+                     WHERE id=? AND status='PENDING'",
+                    params![
+                        JobStatus::Planning.as_str(),
+                        now.to_rfc3339(),
+                        now.to_rfc3339(),
+                        now.to_rfc3339(),
+                        (now + Duration::seconds(lease_timeout_seconds.max(5))).to_rfc3339(),
+                        lease_owner,
+                        id,
+                    ],
+                )
+                .unwrap_or(0)
+                > 0;
+            if changed {
+                self.emit_job_snapshot(&id);
+                return Some(Job {
+                    id,
+                    issue_id,
+                    status: JobStatus::Planning,
+                    payload,
+                    retries,
+                });
+            }
+        }
     }
 
     pub fn update_status(&mut self, id: &str, status: JobStatus, error: Option<String>) {
+        let now = Utc::now().to_rfc3339();
+        let has_lease = status.has_stage_lease();
         let _ = self.conn.lock().expect("db lock").execute(
-            "UPDATE jobs SET status=?, last_error=?, updated_at=? WHERE id=?",
-            params![status.as_str(), error, Utc::now().to_rfc3339(), id],
+            "UPDATE jobs
+             SET status=?,
+                 last_error=?,
+                 updated_at=?,
+                 stage_started_at=CASE WHEN ? = 1 THEN stage_started_at ELSE NULL END,
+                 heartbeat_at=CASE WHEN ? = 1 THEN heartbeat_at ELSE NULL END,
+                 lease_expires_at=CASE WHEN ? = 1 THEN lease_expires_at ELSE NULL END,
+                 lease_owner=CASE WHEN ? = 1 THEN lease_owner ELSE NULL END,
+                 stage_attempt=CASE WHEN ? = 1 THEN stage_attempt ELSE 0 END
+             WHERE id=?",
+            params![
+                status.as_str(),
+                error,
+                now,
+                has_lease as i32,
+                has_lease as i32,
+                has_lease as i32,
+                has_lease as i32,
+                has_lease as i32,
+                id
+            ],
         );
         self.emit_job_snapshot(id);
+    }
+
+    pub fn transition_status(
+        &mut self,
+        id: &str,
+        from: JobStatus,
+        to: JobStatus,
+        error: Option<String>,
+    ) -> bool {
+        let changed = self
+            .conn
+            .lock()
+            .expect("db lock")
+            .execute(
+                "UPDATE jobs
+                 SET status=?, last_error=?, updated_at=?
+                 WHERE id=? AND status=?",
+                params![
+                    to.as_str(),
+                    error,
+                    Utc::now().to_rfc3339(),
+                    id,
+                    from.as_str()
+                ],
+            )
+            .unwrap_or(0)
+            > 0;
+        if changed {
+            self.emit_job_snapshot(id);
+        }
+        changed
+    }
+
+    pub fn transition_status_with_lease(
+        &mut self,
+        id: &str,
+        from: JobStatus,
+        to: JobStatus,
+        error: Option<String>,
+        lease_owner: Option<&str>,
+        lease_timeout_seconds: Option<i64>,
+    ) -> bool {
+        let now = Utc::now();
+        let has_lease = to.has_stage_lease();
+        let stage_started_at = has_lease.then(|| now.to_rfc3339());
+        let heartbeat_at = has_lease.then(|| now.to_rfc3339());
+        let lease_expires_at = if has_lease {
+            Some(
+                (now + Duration::seconds(lease_timeout_seconds.unwrap_or(300).max(5))).to_rfc3339(),
+            )
+        } else {
+            None
+        };
+        let changed = self
+            .conn
+            .lock()
+            .expect("db lock")
+            .execute(
+                "UPDATE jobs
+                 SET status=?,
+                     last_error=?,
+                     updated_at=?,
+                     stage_started_at=?,
+                     heartbeat_at=?,
+                     lease_expires_at=?,
+                     lease_owner=?,
+                     stage_attempt=CASE WHEN ? = 1 THEN COALESCE(stage_attempt, 0) + 1 ELSE 0 END
+                 WHERE id=? AND status=?",
+                params![
+                    to.as_str(),
+                    error,
+                    now.to_rfc3339(),
+                    stage_started_at,
+                    heartbeat_at,
+                    lease_expires_at,
+                    if has_lease { lease_owner } else { None },
+                    has_lease as i32,
+                    id,
+                    from.as_str()
+                ],
+            )
+            .unwrap_or(0)
+            > 0;
+        if changed {
+            self.emit_job_snapshot(id);
+        }
+        changed
+    }
+
+    pub fn renew_stage_lease(
+        &mut self,
+        id: &str,
+        expected_status: JobStatus,
+        lease_owner: &str,
+        lease_timeout_seconds: i64,
+    ) -> bool {
+        if !expected_status.has_stage_lease() {
+            return false;
+        }
+        let now = Utc::now();
+        let changed = self
+            .conn
+            .lock()
+            .expect("db lock")
+            .execute(
+                "UPDATE jobs
+                 SET heartbeat_at=?,
+                     lease_expires_at=?,
+                     lease_owner=?,
+                     updated_at=?
+                 WHERE id=? AND status=? AND COALESCE(lease_owner, '')=?",
+                params![
+                    now.to_rfc3339(),
+                    (now + Duration::seconds(lease_timeout_seconds.max(5))).to_rfc3339(),
+                    lease_owner,
+                    now.to_rfc3339(),
+                    id,
+                    expected_status.as_str(),
+                    lease_owner
+                ],
+            )
+            .unwrap_or(0)
+            > 0;
+        if changed {
+            self.emit_job_snapshot(id);
+        }
+        changed
     }
 
     pub fn create_job(&mut self, issue_id: &str, payload: &str) -> Result<Job> {
@@ -264,6 +585,83 @@ impl JobsRepository {
             )
             .unwrap_or(0);
         count > 0
+    }
+
+    pub fn list_expired_stage_leases(&self, now: &DateTime<Utc>) -> Vec<JobLeaseRecord> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, issue_id, status, last_error, stage_started_at, heartbeat_at,
+                        lease_expires_at, lease_owner, stage_attempt, updated_at
+                 FROM jobs
+                 WHERE status IN ('PLANNING', 'CODING', 'REVIEWING', 'VALIDATING', 'COMMITTING')
+                   AND lease_expires_at IS NOT NULL
+                   AND lease_expires_at <= ?
+                 ORDER BY lease_expires_at ASC, updated_at ASC",
+            )
+            .expect("stmt");
+        stmt.query_map(params![now.to_rfc3339()], |row| {
+            Ok(JobLeaseRecord {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                status: JobStatus::from_db(&row.get::<_, String>(2)?),
+                last_error: row.get(3)?,
+                stage_started_at: row.get(4)?,
+                heartbeat_at: row.get(5)?,
+                lease_expires_at: row.get(6)?,
+                lease_owner: row.get(7)?,
+                stage_attempt: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        })
+        .expect("query")
+        .flatten()
+        .collect()
+    }
+
+    pub fn expire_stage_lease(
+        &mut self,
+        id: &str,
+        expected_status: JobStatus,
+        expected_lease_owner: Option<&str>,
+        expected_lease_expires_at: Option<&str>,
+        error: &str,
+    ) -> bool {
+        let now = Utc::now();
+        let changed = self
+            .conn
+            .lock()
+            .expect("db lock")
+            .execute(
+                "UPDATE jobs
+                 SET status=?,
+                     last_error=?,
+                     updated_at=?,
+                     stage_started_at=NULL,
+                     heartbeat_at=NULL,
+                     lease_expires_at=NULL,
+                     lease_owner=NULL,
+                     stage_attempt=0
+                 WHERE id=?
+                   AND status=?
+                   AND COALESCE(lease_owner, '') = COALESCE(?, '')
+                   AND COALESCE(lease_expires_at, '') = COALESCE(?, '')",
+                params![
+                    JobStatus::Failed.as_str(),
+                    error,
+                    now.to_rfc3339(),
+                    id,
+                    expected_status.as_str(),
+                    expected_lease_owner,
+                    expected_lease_expires_at,
+                ],
+            )
+            .unwrap_or(0)
+            > 0;
+        if changed {
+            self.emit_job_snapshot(id);
+        }
+        changed
     }
 
     fn emit_job_snapshot(&self, job_id: &str) {
@@ -780,6 +1178,53 @@ fn normalize_stage_name(stage: &str) -> String {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunTimelineEntry {
+    pub job_id: String,
+    pub issue_id: Option<String>,
+    pub event_kind: String,
+    pub stage: String,
+    pub status: Option<String>,
+    pub detail: String,
+    pub created_at: String,
+}
+
+pub struct RunTimelineRepository {
+    conn: Arc<Mutex<Connection>>,
+}
+
+impl RunTimelineRepository {
+    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
+        Self { conn }
+    }
+
+    pub fn list_for_job(&self, job_id: &str) -> Vec<RunTimelineEntry> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn
+            .prepare(
+                "SELECT job_id, issue_id, event_kind, stage, status, detail, created_at
+                 FROM code247_run_timeline
+                 WHERE job_id = ?
+                 ORDER BY created_at ASC, event_kind ASC",
+            )
+            .expect("stmt");
+        stmt.query_map(params![job_id], |row| {
+            Ok(RunTimelineEntry {
+                job_id: row.get(0)?,
+                issue_id: row.get(1)?,
+                event_kind: row.get(2)?,
+                stage: row.get(3)?,
+                status: row.get(4)?,
+                detail: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })
+        .expect("query")
+        .flatten()
+        .collect()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum WebhookDeliveryStatus {
     Queued,
@@ -966,5 +1411,387 @@ impl LinearWebhookDeliveryRepository {
             )?;
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LinearOutboxStatus {
+    Queued,
+    Retry,
+    Processing,
+    Done,
+    Dlq,
+}
+
+impl LinearOutboxStatus {
+    fn db_value(self) -> &'static str {
+        match self {
+            LinearOutboxStatus::Queued => "QUEUED",
+            LinearOutboxStatus::Retry => "RETRY",
+            LinearOutboxStatus::Processing => "PROCESSING",
+            LinearOutboxStatus::Done => "DONE",
+            LinearOutboxStatus::Dlq => "DLQ",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinearOutboxAction {
+    pub id: String,
+    pub issue_id: String,
+    pub action_type: String,
+    pub payload: String,
+    pub status: String,
+    pub attempts: i32,
+    pub next_attempt_at: String,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub processed_at: Option<String>,
+    pub updated_at: String,
+}
+
+pub struct LinearOutboxRepository {
+    conn: Arc<Mutex<Connection>>,
+}
+
+impl LinearOutboxRepository {
+    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
+        Self { conn }
+    }
+
+    pub fn enqueue(&self, issue_id: &str, action_type: &str, payload: &Value) -> Result<String> {
+        let now = Utc::now().to_rfc3339();
+        let id = Uuid::new_v4().to_string();
+        self.conn.lock().expect("db lock").execute(
+            "INSERT INTO linear_action_outbox (
+                id, issue_id, action_type, payload, status, attempts, next_attempt_at,
+                created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)",
+            params![
+                id,
+                issue_id,
+                action_type,
+                serde_json::to_string(payload)?,
+                LinearOutboxStatus::Queued.db_value(),
+                now,
+                now,
+                now
+            ],
+        )?;
+        Ok(id)
+    }
+
+    pub fn claim_next_ready(&self) -> Option<LinearOutboxAction> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.lock().expect("db lock");
+        let row = conn
+            .query_row(
+                "SELECT id, issue_id, action_type, payload, status, attempts, next_attempt_at,
+                        last_error, created_at, processed_at, updated_at
+                 FROM linear_action_outbox
+                 WHERE status IN ('QUEUED', 'RETRY')
+                   AND next_attempt_at <= ?
+                 ORDER BY created_at ASC
+                 LIMIT 1",
+                params![now],
+                |row| {
+                    Ok(LinearOutboxAction {
+                        id: row.get(0)?,
+                        issue_id: row.get(1)?,
+                        action_type: row.get(2)?,
+                        payload: row.get(3)?,
+                        status: row.get(4)?,
+                        attempts: row.get(5)?,
+                        next_attempt_at: row.get(6)?,
+                        last_error: row.get(7)?,
+                        created_at: row.get(8)?,
+                        processed_at: row.get(9)?,
+                        updated_at: row.get(10)?,
+                    })
+                },
+            )
+            .ok()?;
+
+        let affected = conn
+            .execute(
+                "UPDATE linear_action_outbox
+                 SET status=?, attempts=attempts+1, updated_at=?
+                 WHERE id=?
+                   AND status IN ('QUEUED', 'RETRY')",
+                params![
+                    LinearOutboxStatus::Processing.db_value(),
+                    Utc::now().to_rfc3339(),
+                    row.id
+                ],
+            )
+            .ok()?;
+        if affected == 0 {
+            return None;
+        }
+
+        Some(LinearOutboxAction {
+            attempts: row.attempts + 1,
+            status: LinearOutboxStatus::Processing.db_value().to_string(),
+            ..row
+        })
+    }
+
+    pub fn mark_done(&self, id: &str) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.lock().expect("db lock").execute(
+            "UPDATE linear_action_outbox
+             SET status=?, processed_at=?, last_error=NULL, updated_at=?
+             WHERE id=?",
+            params![LinearOutboxStatus::Done.db_value(), now, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn mark_retry_or_dlq(
+        &self,
+        id: &str,
+        attempts: i32,
+        max_attempts: i32,
+        retry_delay_seconds: i64,
+        error_message: &str,
+    ) -> Result<()> {
+        let now = Utc::now();
+        if attempts >= max_attempts {
+            self.conn.lock().expect("db lock").execute(
+                "UPDATE linear_action_outbox
+                 SET status=?, processed_at=?, last_error=?, updated_at=?
+                 WHERE id=?",
+                params![
+                    LinearOutboxStatus::Dlq.db_value(),
+                    now.to_rfc3339(),
+                    error_message,
+                    now.to_rfc3339(),
+                    id
+                ],
+            )?;
+        } else {
+            let next_attempt = now + Duration::seconds(retry_delay_seconds.max(5));
+            self.conn.lock().expect("db lock").execute(
+                "UPDATE linear_action_outbox
+                 SET status=?, next_attempt_at=?, last_error=?, updated_at=?
+                 WHERE id=?",
+                params![
+                    LinearOutboxStatus::Retry.db_value(),
+                    next_attempt.to_rfc3339(),
+                    error_message,
+                    now.to_rfc3339(),
+                    id
+                ],
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::{mpsc, Arc, Barrier},
+        thread,
+    };
+
+    use super::{JobStatus, JobsRepository, SqliteDb};
+
+    fn temp_db_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("code247-{name}-{}.db", uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn stage_lease_transition_sets_and_clears_lease_fields() {
+        let db = SqliteDb::open(":memory:").expect("open sqlite");
+        db.run_migrations().expect("migrations");
+        let mut repo = JobsRepository::new(db.connection(), None);
+        let job = repo
+            .create_job("issue-1", "{\"title\":\"demo\"}")
+            .expect("create job");
+
+        let transitioned = repo.transition_status_with_lease(
+            &job.id,
+            JobStatus::Pending,
+            JobStatus::Planning,
+            None,
+            Some("worker-a"),
+            Some(120),
+        );
+        assert!(transitioned);
+
+        let lease = repo
+            .list_expired_stage_leases(&(chrono::Utc::now() + chrono::Duration::seconds(180)))
+            .into_iter()
+            .find(|item| item.id == job.id)
+            .expect("lease record");
+        assert_eq!(lease.status, JobStatus::Planning);
+        assert_eq!(lease.lease_owner.as_deref(), Some("worker-a"));
+        assert_eq!(lease.stage_attempt, 1);
+        assert!(lease.lease_expires_at.is_some());
+
+        let expired = repo.expire_stage_lease(
+            &job.id,
+            JobStatus::Planning,
+            Some("worker-a"),
+            lease.lease_expires_at.as_deref(),
+            "lease expired",
+        );
+        assert!(expired);
+        assert!(repo
+            .list_expired_stage_leases(&(chrono::Utc::now() + chrono::Duration::hours(1)))
+            .into_iter()
+            .all(|item| item.id != job.id));
+    }
+
+    #[test]
+    fn renew_stage_lease_rejects_foreign_owner() {
+        let db = SqliteDb::open(":memory:").expect("open sqlite");
+        db.run_migrations().expect("migrations");
+        let mut repo = JobsRepository::new(db.connection(), None);
+        let job = repo
+            .create_job("issue-2", "{\"title\":\"demo\"}")
+            .expect("create job");
+
+        assert!(repo.transition_status_with_lease(
+            &job.id,
+            JobStatus::Pending,
+            JobStatus::Coding,
+            None,
+            Some("worker-a"),
+            Some(120),
+        ));
+
+        let renewed = repo.renew_stage_lease(&job.id, JobStatus::Coding, "worker-b", 120);
+        assert!(!renewed);
+
+        let lease = repo
+            .list_expired_stage_leases(&(chrono::Utc::now() + chrono::Duration::seconds(180)))
+            .into_iter()
+            .find(|item| item.id == job.id)
+            .expect("lease record");
+        assert_eq!(lease.lease_owner.as_deref(), Some("worker-a"));
+    }
+
+    #[test]
+    fn expire_stage_lease_requires_matching_owner_and_expiry_and_is_idempotent() {
+        let db = SqliteDb::open(":memory:").expect("open sqlite");
+        db.run_migrations().expect("migrations");
+        let mut repo = JobsRepository::new(db.connection(), None);
+        let job = repo
+            .create_job("issue-3", "{\"title\":\"demo\"}")
+            .expect("create job");
+
+        assert!(repo.transition_status_with_lease(
+            &job.id,
+            JobStatus::Pending,
+            JobStatus::Reviewing,
+            None,
+            Some("worker-a"),
+            Some(5),
+        ));
+
+        let stale = repo
+            .list_expired_stage_leases(&(chrono::Utc::now() + chrono::Duration::seconds(10)))
+            .into_iter()
+            .find(|item| item.id == job.id)
+            .expect("stale lease");
+        assert!(repo.renew_stage_lease(&job.id, JobStatus::Reviewing, "worker-a", 120));
+
+        let wrongly_expired = repo.expire_stage_lease(
+            &job.id,
+            JobStatus::Reviewing,
+            stale.lease_owner.as_deref(),
+            stale.lease_expires_at.as_deref(),
+            "stale expire",
+        );
+        assert!(!wrongly_expired);
+
+        let current = repo
+            .list_expired_stage_leases(&(chrono::Utc::now() + chrono::Duration::seconds(180)))
+            .into_iter()
+            .find(|item| item.id == job.id)
+            .expect("current lease");
+        let expired = repo.expire_stage_lease(
+            &job.id,
+            JobStatus::Reviewing,
+            current.lease_owner.as_deref(),
+            current.lease_expires_at.as_deref(),
+            "lease expired",
+        );
+        assert!(expired);
+
+        let duplicate = repo.expire_stage_lease(
+            &job.id,
+            JobStatus::Reviewing,
+            current.lease_owner.as_deref(),
+            current.lease_expires_at.as_deref(),
+            "lease expired",
+        );
+        assert!(!duplicate);
+    }
+
+    #[test]
+    fn claim_next_pending_with_lease_is_atomic_across_instances() {
+        let path = temp_db_path("claim-race");
+        let db = SqliteDb::open(path.to_str().expect("db path")).expect("open sqlite");
+        db.run_migrations().expect("migrations");
+        let mut repo = JobsRepository::new(db.connection(), None);
+        let job = repo
+            .create_job("issue-4", "{\"title\":\"demo\"}")
+            .expect("create job");
+        drop(repo);
+        drop(db);
+
+        let barrier = Arc::new(Barrier::new(3));
+        let (tx, rx) = mpsc::channel();
+
+        for owner in ["worker-a", "worker-b"] {
+            let owner = owner.to_string();
+            let db_path = path.clone();
+            let barrier = barrier.clone();
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let db = SqliteDb::open(db_path.to_str().expect("db path")).expect("open sqlite");
+                let mut repo = JobsRepository::new(db.connection(), None);
+                barrier.wait();
+                let claimed = repo.claim_next_pending_with_lease(&owner, 120);
+                tx.send((owner, claimed.map(|item| item.id)))
+                    .expect("send result");
+            });
+        }
+        drop(tx);
+        barrier.wait();
+
+        let results: Vec<_> = rx.iter().collect();
+        let winners: Vec<_> = results
+            .iter()
+            .filter_map(|(owner, job_id)| {
+                job_id
+                    .as_ref()
+                    .map(|job_id| (owner.clone(), job_id.clone()))
+            })
+            .collect();
+        assert_eq!(
+            winners.len(),
+            1,
+            "exactly one instance should claim the pending job"
+        );
+        assert_eq!(winners[0].1, job.id);
+
+        let db = SqliteDb::open(path.to_str().expect("db path")).expect("open sqlite");
+        let repo = JobsRepository::new(db.connection(), None);
+        let lease = repo
+            .list_expired_stage_leases(&(chrono::Utc::now() + chrono::Duration::seconds(180)))
+            .into_iter()
+            .find(|item| item.id == job.id)
+            .expect("lease record");
+        assert_eq!(lease.status, JobStatus::Planning);
+        assert_eq!(lease.lease_owner.as_deref(), Some(winners[0].0.as_str()));
+        assert_eq!(lease.stage_attempt, 1);
+
+        fs::remove_file(path).expect("cleanup db");
     }
 }

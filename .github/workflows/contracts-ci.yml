@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  merge_group:
+    branches: [main]
 
 jobs:
   validate-contracts:
@@ -31,6 +33,18 @@ jobs:
       - name: Cargo check edge-control
         run: cargo check --manifest-path edge-control.logline.world/Cargo.toml
 
+  code247-state-governance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Code247 state governance
+        run: ./scripts/verify-code247-state-governance.sh
+
   llm-gateway-check:
     runs-on: ubuntu-latest
     steps:
@@ -55,6 +69,31 @@ jobs:
       - name: Cargo check logic workspace
         run: cargo check --manifest-path logic.logline.world/Cargo.toml --workspace
 
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run security scan
+        run: ./scripts/security-scan.sh
+
+      - name: Upload security scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-report
+          path: artifacts/security-scan-report.txt
+          if-no-files-found: ignore
+
   integration-severe:
     runs-on: ubuntu-latest
     steps:
@@ -78,4 +117,68 @@ jobs:
         with:
           name: integration-severe-report
           path: artifacts/integration-severe-report.json
+          if-no-files-found: ignore
+
+  obs-api-auth-smoke:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.DOPPLER_TOKEN != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: obs-api.logline.world/package-lock.json
+
+      - name: Install obs-api dependencies
+        working-directory: obs-api.logline.world
+        run: npm ci
+
+      - name: Run authenticated obs-api smoke
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: doppler run --project logline-ecosystem --config dev -- ./scripts/smoke-obs-api-auth.sh
+
+      - name: Upload obs-api smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: obs-api-auth-smoke
+          path: |
+            artifacts/obs-api-auth-smoke-report.json
+            artifacts/obs-api-auth-smoke.log
+          if-no-files-found: ignore
+
+  llm-gateway-auth-smoke:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.DOPPLER_TOKEN != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run authenticated llm-gateway smoke
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: doppler run --project logline-ecosystem --config dev -- ./scripts/smoke-llm-gateway-auth.sh
+
+      - name: Upload llm-gateway smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-gateway-auth-smoke
+          path: |
+            artifacts/llm-gateway-auth-smoke-report.json
+            artifacts/llm-gateway-auth-smoke.log
           if-no-files-found: ignore

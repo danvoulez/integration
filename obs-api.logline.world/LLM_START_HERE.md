@@ -1,99 +1,66 @@
-# OBS API — LLM Start Here
+# LLM START HERE: OBS-API
 
-**Read the root `LLM_START_HERE.md` first.**
+## Authority
 
-## What is OBS API?
+- Read model and observability hub only
+- Never source of business truth
+- Never decision engine
 
-OBS API is the observability hub for the LogLine ecosystem. It centralizes event ingestion, timelines, traces, and operator dashboards. It is **not** a business authority — it observes and displays, never decides.
+## Entry Files
 
-## Architecture
+- `app/api/`: HTTP routes
+- `lib/obs/`: read-model queries and transformations
+- `lib/auth/`: auth helpers
+- `openapi.yaml`: public contract
 
-```
-Services (code247, llm-gateway, edge-control) → /api/v1/events/ingest → Supabase
-                                                         ↓
-                                              Dashboards / Alerts / Timelines
-```
+## HTTP Surface
 
-## Key Directories
+- `POST /api/v1/events/ingest`
+- `GET /api/v1/fuel/dashboard`
+- `GET /api/v1/fuel/alerts`
+- `GET /api/v1/fuel/calibration`
+- `GET /api/v1/fuel/reconciliation`
+- `GET /api/v1/fuel/ops`
+- `GET /api/v1/code247/stage-telemetry`
+- `GET /api/v1/code247/run-timeline`
+- `GET /api/health`
 
-| Directory | Purpose |
-|-----------|---------|
-| `app/` | Next.js app routes |
-| `app/api/` | API endpoints |
-| `components/` | React components |
-| `lib/` | Utilities and auth |
-| `db/` | Database schema (Drizzle) |
+## Behavioral Rules
 
-## Critical Endpoints
+- Read from canonical backend state only
+- No mock data in production code
+- No hidden state machines here
+- Protected endpoints require auth
+- Event ingest requires `request_id`
 
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /api/v1/events/ingest` | Cross-service event intake |
-| `GET /api/v1/timeline/:intentionId` | Timeline by intention |
-| `GET /api/v1/traces/:traceId` | Trace tree by causal ID |
-| `GET /api/v1/runs/:runId` | Run projection |
-| `GET /api/v1/dashboards/summary` | Operator summary |
-| `GET /api/v1/fuel/dashboard` | Fuel metrics |
-| `GET /api/health` | Health check |
+## UI Rules
 
-## Event Ingestion Contract
+- UI comes after backend
+- Do not invent fake readiness with placeholder data
+- Prefer backend route completion before UI wiring
 
-Every event must include:
-- `event_id` — unique identifier
-- `event_type` — semantic type
-- `occurred_at` — timestamp
-- `source` — emitting service
-- `request_id` — for replay/audit
+## Secrets
 
-When causal linkage exists:
-- `trace_id`
-- `parent_event_id`
+- Use `doppler run --project logline-ecosystem --config <env> -- npm run dev`
+- Relevant secrets/config:
+  - `SUPABASE_*`
+  - `DATABASE_URL`/equivalent DB env
+  - `SUPABASE_JWT_SECRET`
 
-When applicable:
-- `intention_id`, `run_id`, `issue_id`, `pr_id`, `deploy_id`
-
-## OBS API Rules
-
-**MUST centralize:**
-- Cross-service event ingest
-- Timeline by intention
-- Trace tree by causal ID
-- Run projection
-- Operator summary/alerts
-
-**MUST NOT centralize:**
-- Domain decision logic (owned by Rust services)
-- Hidden app-specific state machines
-
-## What You MUST NOT Do
-
-1. **Never implement business logic here** — obs-api observes, never decides
-2. **Never accept events without `request_id`**
-3. **Never skip auth for protected endpoints**
-4. **Never use mock data in production code**
-
-## What You SHOULD Do
-
-1. Display data from canonical backend endpoints
-2. Implement proper error envelopes
-3. Use Supabase JWT for auth
-4. Keep dashboards real-time via Supabase Realtime
-
-## Quick Commands
+## Required Checks
 
 ```bash
-# Run dev server
-npm run dev
-
-# Type check
-npm run typecheck
-
-# Lint
-npm run lint
+cd obs-api.logline.world && npm run lint
+cd /Users/ubl-ops/Integration && doppler run --project logline-ecosystem --config dev -- ./scripts/smoke-obs-api-auth.sh
 ```
 
-## Key Docs
+## Do Not Do
 
-- `README.md` — Quick start, endpoints, project structure
-- `../ECOSYSTEM_SERVICE_STANDARD_v1.md` — API standards
-- `../FUEL_SYSTEM_SPEC.md` — Fuel system specification
+- Do not add business decisions
+- Do not accept unauthenticated write paths
+- Do not ship dashboards backed by synthetic data
+
+## Next Docs
+
+- `README.md`
+- `../TASKLIST-GERAL.md`

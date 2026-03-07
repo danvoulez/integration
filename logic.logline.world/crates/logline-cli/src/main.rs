@@ -6,26 +6,24 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use logline_api::{Intent, RuntimeEngine};
 use logline_core::{
     default_config_dir, demo_catalog, load_catalog_from_dir, write_default_config_files,
 };
 use logline_runtime::LoglineRuntime;
-use uuid::Uuid;
 
 use crate::commands::auth_session;
 use crate::commands::cicd;
 use crate::commands::db;
 use crate::commands::deploy;
 use crate::commands::dev;
-use crate::commands::harness;
 use crate::commands::secrets;
 use crate::supabase::{
-    StoredAuth, SupabaseClient, SupabaseConfig, delete_auth, get_valid_token, load_auth,
-    load_passkey, save_auth, save_passkey,
+    SupabaseClient, SupabaseConfig, StoredAuth,
+    get_valid_token, load_auth, save_auth, delete_auth,
+    load_passkey, save_passkey,
 };
 
 #[derive(Debug, Parser)]
@@ -54,9 +52,7 @@ enum Commands {
         #[arg(long = "arg", value_parser = parse_key_val)]
         args: Vec<(String, String)>,
     },
-    Stop {
-        run_id: String,
-    },
+    Stop { run_id: String },
     Events {
         #[arg(long)]
         since: Option<String>,
@@ -94,11 +90,6 @@ enum Commands {
         #[command(subcommand)]
         command: FuelCommands,
     },
-    /// Export CLI capability catalog (machine-readable)
-    Catalog {
-        #[command(subcommand)]
-        command: CatalogCommands,
-    },
     /// Supabase CLI helper commands
     Supabase {
         #[command(subcommand)]
@@ -128,11 +119,6 @@ enum Commands {
     Cicd {
         #[command(subcommand)]
         command: cicd::CicdCommands,
-    },
-    /// Integration harness (intentions flow, severe suite, auditable report)
-    Harness {
-        #[command(subcommand)]
-        command: harness::HarnessCommands,
     },
     /// Object storage (Supabase Storage)
     Storage {
@@ -342,40 +328,6 @@ enum FuelCommands {
         #[arg(long)]
         app_id: Option<String>,
     },
-    /// Run valuation reconciliation (L0 backfill window)
-    Reconcile {
-        /// Window start (ISO-8601). Default: now - 24h
-        #[arg(long)]
-        from: Option<String>,
-        /// Window end (ISO-8601). Default: now
-        #[arg(long)]
-        to: Option<String>,
-        /// Price card version override
-        #[arg(long)]
-        price_card_version: Option<String>,
-    },
-    /// Show valuation drift and precision coverage for recent days
-    ReconciliationStatus {
-        /// Number of days to inspect
-        #[arg(long, default_value = "14")]
-        days: u32,
-        /// Filter by app
-        #[arg(long)]
-        app_id: Option<String>,
-        /// Filter by source
-        #[arg(long)]
-        source: Option<String>,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-enum CatalogCommands {
-    /// Export CLI command catalog as JSON
-    Export {
-        /// Optional output path (stdout when omitted)
-        #[arg(long)]
-        output: Option<PathBuf>,
-    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -497,84 +449,23 @@ fn main() -> anyhow::Result<()> {
                 }
             }
             write_default_config_files(&cfg_dir)?;
-            pout(
-                cli.json,
-                serde_json::json!({"message":"init complete","config_dir":cfg_dir}),
-                "Init complete",
-            )?;
+            pout(cli.json, serde_json::json!({"message":"init complete","config_dir":cfg_dir}), "Init complete")?;
         }
         Commands::Status => {
             let status = runtime.status()?;
-            let request_id = make_request_id();
-            maybe_emit_obs_event(
-                "logic.runtime.status",
-                &request_id,
-                None,
-                None,
-                serde_json::json!({
-                    "active_profile": status.active_profile,
-                    "active_backend": status.active_backend,
-                    "running_jobs": status.running_jobs,
-                    "queue_depth": status.queue_depth,
-                }),
-            );
-            pout(
-                cli.json,
-                serde_json::to_value(status)?,
-                "Runtime status retrieved",
-            )?;
+            pout(cli.json, serde_json::to_value(status)?, "Runtime status retrieved")?;
         }
         Commands::Run { intent, args } => {
             let payload = BTreeMap::from_iter(args);
-            let intention_id = payload.get("intention_id").cloned();
-            let result = runtime.run_intent(Intent {
-                intent_type: intent.clone(),
-                payload,
-            })?;
-            let request_id = make_request_id();
-            maybe_emit_obs_event(
-                "logic.runtime.intent_completed",
-                &request_id,
-                Some(result.run_id.as_str()),
-                intention_id.as_deref(),
-                serde_json::json!({
-                    "intent_type": intent,
-                    "status": result.status,
-                    "output_keys": result.output.keys().cloned().collect::<Vec<_>>(),
-                }),
-            );
+            let result = runtime.run_intent(Intent { intent_type: intent, payload })?;
             pout(cli.json, serde_json::to_value(result)?, "Intent accepted")?;
         }
         Commands::Stop { run_id } => {
             runtime.stop_run(run_id.clone())?;
-            let request_id = make_request_id();
-            maybe_emit_obs_event(
-                "logic.runtime.stop_requested",
-                &request_id,
-                Some(run_id.as_str()),
-                None,
-                serde_json::json!({
-                    "run_id": run_id,
-                }),
-            );
-            pout(
-                cli.json,
-                serde_json::json!({"ok":true,"run_id":run_id}),
-                "Stop signal sent",
-            )?;
+            pout(cli.json, serde_json::json!({"ok":true,"run_id":run_id}), "Stop signal sent")?;
         }
         Commands::Events { since } => {
             let events = runtime.events_since(since)?;
-            let request_id = make_request_id();
-            maybe_emit_obs_event(
-                "logic.runtime.events_fetched",
-                &request_id,
-                None,
-                None,
-                serde_json::json!({
-                    "events_count": events.len(),
-                }),
-            );
             pout(cli.json, serde_json::to_value(events)?, "Events fetched")?;
         }
         Commands::Profile { command } => match command {
@@ -584,11 +475,7 @@ fn main() -> anyhow::Result<()> {
             }
             ProfileCommands::Use { profile_id } => {
                 runtime.select_profile(profile_id.clone())?;
-                pout(
-                    cli.json,
-                    serde_json::json!({"ok":true,"active_profile":profile_id}),
-                    "Profile selected",
-                )?;
+                pout(cli.json, serde_json::json!({"ok":true,"active_profile":profile_id}), "Profile selected")?;
             }
         },
         Commands::Backend { command } => match command {
@@ -598,11 +485,7 @@ fn main() -> anyhow::Result<()> {
             }
             BackendCommands::Test { backend_id } => {
                 runtime.test_backend(backend_id.clone())?;
-                pout(
-                    cli.json,
-                    serde_json::json!({"ok":true,"backend_id":backend_id}),
-                    "Backend health check passed",
-                )?;
+                pout(cli.json, serde_json::json!({"ok":true,"backend_id":backend_id}), "Backend health check passed")?;
             }
         },
 
@@ -634,9 +517,7 @@ fn main() -> anyhow::Result<()> {
             let client = SupabaseClient::new(config)?;
 
             match command {
-                AuthCommands::Unlock { .. } | AuthCommands::Lock | AuthCommands::Status => {
-                    unreachable!()
-                }
+                AuthCommands::Unlock { .. } | AuthCommands::Lock | AuthCommands::Status => unreachable!(),
                 AuthCommands::Login { email, passkey } => {
                     if passkey {
                         cmd_login_passkey(&client, cli.json)?;
@@ -655,11 +536,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 AuthCommands::Logout => {
                     delete_auth()?;
-                    pout(
-                        cli.json,
-                        serde_json::json!({"ok":true}),
-                        "Logged out. All local tokens removed.",
-                    )?;
+                    pout(cli.json, serde_json::json!({"ok":true}), "Logged out. All local tokens removed.")?;
                 }
                 AuthCommands::Debug => {
                     cmd_auth_debug(&client, cli.json)?;
@@ -673,10 +550,7 @@ fn main() -> anyhow::Result<()> {
             let client = SupabaseClient::new(config)?;
 
             match command {
-                FounderCommands::Bootstrap {
-                    tenant_slug,
-                    tenant_name,
-                } => {
+                FounderCommands::Bootstrap { tenant_slug, tenant_name } => {
                     cmd_founder_bootstrap(&client, &tenant_slug, &tenant_name, cli.json)?;
                 }
             }
@@ -691,20 +565,8 @@ fn main() -> anyhow::Result<()> {
                 AppCommands::Create { app_id, name } => {
                     cmd_app_create(&client, &app_id, &name, cli.json)?;
                 }
-                AppCommands::Handshake {
-                    app_id,
-                    service_url,
-                    api_key,
-                    capabilities,
-                } => {
-                    cmd_app_handshake(
-                        &client,
-                        &app_id,
-                        &service_url,
-                        api_key.as_deref(),
-                        capabilities.as_deref(),
-                        cli.json,
-                    )?;
+                AppCommands::Handshake { app_id, service_url, api_key, capabilities } => {
+                    cmd_app_handshake(&client, &app_id, &service_url, api_key.as_deref(), capabilities.as_deref(), cli.json)?;
                 }
                 AppCommands::ConfigExport { app_id } => {
                     cmd_app_config_export(&client, &app_id, cli.json)?;
@@ -712,20 +574,8 @@ fn main() -> anyhow::Result<()> {
                 AppCommands::List => {
                     cmd_app_list(&client, cli.json)?;
                 }
-                AppCommands::IssueServiceToken {
-                    app_id,
-                    ttl_days,
-                    capabilities,
-                    description,
-                } => {
-                    cmd_app_issue_service_token(
-                        &client,
-                        &app_id,
-                        ttl_days,
-                        capabilities.as_deref(),
-                        description.as_deref(),
-                        cli.json,
-                    )?;
+                AppCommands::IssueServiceToken { app_id, ttl_days, capabilities, description } => {
+                    cmd_app_issue_service_token(&client, &app_id, ttl_days, capabilities.as_deref(), description.as_deref(), cli.json)?;
                 }
                 AppCommands::RevokeServiceToken { token_id } => {
                     cmd_app_revoke_service_token(&client, &token_id, cli.json)?;
@@ -748,18 +598,8 @@ fn main() -> anyhow::Result<()> {
                 TenantCommands::Create { slug, name } => {
                     cmd_tenant_create(&client, &slug, &name, cli.json)?;
                 }
-                TenantCommands::AllowlistAdd {
-                    email,
-                    role,
-                    app_defaults,
-                } => {
-                    cmd_tenant_allowlist_add(
-                        &client,
-                        &email,
-                        &role,
-                        app_defaults.as_deref(),
-                        cli.json,
-                    )?;
+                TenantCommands::AllowlistAdd { email, role, app_defaults } => {
+                    cmd_tenant_allowlist_add(&client, &email, &role, app_defaults.as_deref(), cli.json)?;
                 }
                 TenantCommands::Resolve { slug } => {
                     cmd_tenant_resolve(&client, &slug, cli.json)?;
@@ -773,73 +613,17 @@ fn main() -> anyhow::Result<()> {
             let client = SupabaseClient::new(config)?;
 
             match command {
-                FuelCommands::Emit {
-                    app_id,
-                    units,
-                    unit_type,
-                    source,
-                    idempotency_key,
-                } => {
-                    cmd_fuel_emit(
-                        &client,
-                        &app_id,
-                        units,
-                        &unit_type,
-                        &source,
-                        idempotency_key.as_deref(),
-                        cli.json,
-                    )?;
+                FuelCommands::Emit { app_id, units, unit_type, source, idempotency_key } => {
+                    cmd_fuel_emit(&client, &app_id, units, &unit_type, &source, idempotency_key.as_deref(), cli.json)?;
                 }
-                FuelCommands::List {
-                    app_id,
-                    unit_type,
-                    limit,
-                } => {
-                    cmd_fuel_list(
-                        &client,
-                        app_id.as_deref(),
-                        unit_type.as_deref(),
-                        limit,
-                        cli.json,
-                    )?;
+                FuelCommands::List { app_id, unit_type, limit } => {
+                    cmd_fuel_list(&client, app_id.as_deref(), unit_type.as_deref(), limit, cli.json)?;
                 }
                 FuelCommands::Summary { app_id } => {
                     cmd_fuel_summary(&client, app_id.as_deref(), cli.json)?;
                 }
-                FuelCommands::Reconcile {
-                    from,
-                    to,
-                    price_card_version,
-                } => {
-                    cmd_fuel_reconcile(
-                        &client,
-                        from.as_deref(),
-                        to.as_deref(),
-                        price_card_version.as_deref(),
-                        cli.json,
-                    )?;
-                }
-                FuelCommands::ReconciliationStatus {
-                    days,
-                    app_id,
-                    source,
-                } => {
-                    cmd_fuel_reconciliation_status(
-                        &client,
-                        days,
-                        app_id.as_deref(),
-                        source.as_deref(),
-                        cli.json,
-                    )?;
-                }
             }
         }
-
-        Commands::Catalog { command } => match command {
-            CatalogCommands::Export { output } => {
-                cmd_catalog_export(output.as_ref(), cli.json)?;
-            }
-        },
 
         // ─── New CLI-Only commands ──────────────────────────────────────
         Commands::Secrets { command } => {
@@ -857,9 +641,6 @@ fn main() -> anyhow::Result<()> {
         Commands::Cicd { command } => {
             return cicd::cmd_cicd(command, cli.json);
         }
-        Commands::Harness { command } => {
-            return harness::cmd_harness(command, cli.json);
-        }
 
         // ─── Storage ────────────────────────────────────────────────────
         Commands::Storage { command } => {
@@ -870,33 +651,16 @@ fn main() -> anyhow::Result<()> {
                 StorageCommands::Upload { file, bucket, path } => {
                     cmd_storage_upload(&client, &file, &bucket, path.as_deref(), cli.json)?;
                 }
-                StorageCommands::Download {
-                    remote_path,
-                    bucket,
-                    output,
-                } => {
-                    cmd_storage_download(
-                        &client,
-                        &remote_path,
-                        &bucket,
-                        output.as_deref(),
-                        cli.json,
-                    )?;
+                StorageCommands::Download { remote_path, bucket, output } => {
+                    cmd_storage_download(&client, &remote_path, &bucket, output.as_deref(), cli.json)?;
                 }
                 StorageCommands::List { bucket, prefix } => {
                     cmd_storage_list(&client, &bucket, prefix.as_deref(), cli.json)?;
                 }
-                StorageCommands::Sign {
-                    remote_path,
-                    bucket,
-                    expires_in,
-                } => {
+                StorageCommands::Sign { remote_path, bucket, expires_in } => {
                     cmd_storage_sign(&client, &remote_path, &bucket, expires_in, cli.json)?;
                 }
-                StorageCommands::Delete {
-                    remote_path,
-                    bucket,
-                } => {
+                StorageCommands::Delete { remote_path, bucket } => {
                     cmd_storage_delete(&client, &remote_path, &bucket, cli.json)?;
                 }
             }
@@ -908,11 +672,7 @@ fn main() -> anyhow::Result<()> {
             let client = SupabaseClient::new(config)?;
 
             match command {
-                BroadcastCommands::Send {
-                    channel,
-                    event,
-                    payload,
-                } => {
+                BroadcastCommands::Send { channel, event, payload } => {
                     cmd_broadcast_send(&client, &channel, &event, &payload, cli.json)?;
                 }
             }
@@ -936,14 +696,9 @@ fn main() -> anyhow::Result<()> {
                 }
                 let entry = keyring::Entry::new("logline-cli", "supabase_access_token")
                     .map_err(|e| anyhow::anyhow!("Keychain error: {e}"))?;
-                entry
-                    .set_password(token.trim())
+                entry.set_password(token.trim())
                     .map_err(|e| anyhow::anyhow!("Failed to store in keychain: {e}"))?;
-                pout(
-                    cli.json,
-                    serde_json::json!({"ok": true}),
-                    "Supabase access token stored in OS keychain.",
-                )?;
+                pout(cli.json, serde_json::json!({"ok": true}), "Supabase access token stored in OS keychain.")?;
             }
             SupabaseCommands::Check { workdir } => {
                 println!("supabase version:");
@@ -954,10 +709,7 @@ fn main() -> anyhow::Result<()> {
             SupabaseCommands::Projects { workdir } => {
                 run_supabase_stream(&["projects", "list"], workdir.as_ref())?;
             }
-            SupabaseCommands::Link {
-                project_ref,
-                workdir,
-            } => {
+            SupabaseCommands::Link { project_ref, workdir } => {
                 run_supabase_stream(&["link", "--project-ref", &project_ref], workdir.as_ref())?;
             }
             SupabaseCommands::Migrate { workdir } => {
@@ -996,29 +748,19 @@ fn cmd_login_email(client: &SupabaseClient, email: &str, json: bool) -> anyhow::
     };
     save_auth(&stored)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "user_id": resp.user.id,
-            "email": resp.user.email,
-            "auth_method": "password",
-        }),
-        &format!(
-            "Logged in as {} ({})",
-            resp.user.email.as_deref().unwrap_or("?"),
-            resp.user.id
-        ),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "user_id": resp.user.id,
+        "email": resp.user.email,
+        "auth_method": "password",
+    }), &format!("Logged in as {} ({})", resp.user.email.as_deref().unwrap_or("?"), resp.user.id))?;
 
     Ok(())
 }
 
 fn cmd_login_passkey(client: &SupabaseClient, json: bool) -> anyhow::Result<()> {
     let auth = load_auth().ok_or_else(|| {
-        anyhow::anyhow!(
-            "No stored session. Run `logline auth login --email` first, then register a passkey."
-        )
+        anyhow::anyhow!("No stored session. Run `logline auth login --email` first, then register a passkey.")
     })?;
 
     if load_passkey().is_none() {
@@ -1079,33 +821,20 @@ exit(ok ? 0 : 1)
     };
     save_auth(&stored)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "user_id": resp.user.id,
-            "email": resp.user.email,
-            "auth_method": "passkey",
-        }),
-        &format!(
-            "Authenticated via passkey as {}",
-            resp.user.email.as_deref().unwrap_or(&resp.user.id)
-        ),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "user_id": resp.user.id,
+        "email": resp.user.email,
+        "auth_method": "passkey",
+    }), &format!("Authenticated via passkey as {}", resp.user.email.as_deref().unwrap_or(&resp.user.id)))?;
 
     Ok(())
 }
 
-fn cmd_passkey_register(
-    client: &SupabaseClient,
-    device_name: Option<String>,
-    json: bool,
-) -> anyhow::Result<()> {
+fn cmd_passkey_register(client: &SupabaseClient, device_name: Option<String>, json: bool) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
     let user = client.get_user(&token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
 
     use ed25519_dalek::SigningKey;
     use rand::rngs::OsRng;
@@ -1135,25 +864,13 @@ fn cmd_passkey_register(
         "status": "active",
     });
 
-    client.postgrest_upsert(
-        "cli_passkey_credentials",
-        &cred,
-        "user_id,device_name",
-        &token,
-    )?;
+    client.postgrest_upsert("cli_passkey_credentials", &cred, "user_id,device_name", &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "device_name": device,
-            "public_key": public_key_hex,
-        }),
-        &format!(
-            "Passkey registered for device '{}'\nPublic key: {}",
-            device, public_key_hex
-        ),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "device_name": device,
+        "public_key": public_key_hex,
+    }), &format!("Passkey registered for device '{}'\nPublic key: {}", device, public_key_hex))?;
 
     Ok(())
 }
@@ -1215,10 +932,7 @@ fn cmd_auth_debug(client: &SupabaseClient, json_out: bool) -> anyhow::Result<()>
             Err(e) => eprintln!("Could not decode JWT payload: {e}"),
         }
     } else {
-        eprintln!(
-            "Invalid JWT structure (expected 3 parts, got {})",
-            parts.len()
-        );
+        eprintln!("Invalid JWT structure (expected 3 parts, got {})", parts.len());
     }
 
     // 3. Test Auth API (GoTrue - uses Authorization header directly)
@@ -1237,15 +951,11 @@ fn cmd_auth_debug(client: &SupabaseClient, json_out: bool) -> anyhow::Result<()>
     // We'll query tenant_memberships and see if rows come back
     // If app.current_user_id() works, we'll get our membership
     // If not, we'll get empty results (RLS blocks)
-
+    
     let user_id = jwt_sub.as_deref().or(auth.user_id.as_deref()).unwrap_or("");
     eprintln!("Testing with user_id: {user_id}");
-
-    match client.postgrest_get(
-        "tenant_memberships",
-        &format!("select=tenant_id,role&user_id=eq.{user_id}&limit=1"),
-        token,
-    ) {
+    
+    match client.postgrest_get("tenant_memberships", &format!("select=tenant_id,role&user_id=eq.{user_id}&limit=1"), token) {
         Ok(rows) => {
             let arr = rows.as_array();
             if arr.map(|a| a.is_empty()).unwrap_or(true) {
@@ -1279,93 +989,64 @@ fn cmd_founder_bootstrap(
     tenant_name: &str,
     json: bool,
 ) -> anyhow::Result<()> {
-    let service_role_key = std::env::var("SUPABASE_SERVICE_ROLE_KEY").map_err(|_| {
-        anyhow::anyhow!(
+    let service_role_key = std::env::var("SUPABASE_SERVICE_ROLE_KEY")
+        .map_err(|_| anyhow::anyhow!(
             "SUPABASE_SERVICE_ROLE_KEY env var required for bootstrap.\n\
              This is a one-time operation. The service role key is never needed again."
-        )
-    })?;
+        ))?;
 
     let token = get_valid_token(client)?;
     let user = client.get_user(&token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine user_id from JWT"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id from JWT"))?;
     let email = user["email"].as_str().unwrap_or("");
-    let display_name = user["user_metadata"]["display_name"]
-        .as_str()
-        .unwrap_or(email);
+    let display_name = user["user_metadata"]["display_name"].as_str().unwrap_or(email);
 
     eprintln!("Bootstrapping world as {email} ({user_id})...");
 
     let tenant_id = tenant_slug.to_string();
 
     // All inserts use service-role key to bypass RLS (nothing exists yet)
-    client.service_role_insert(
-        "users",
-        &serde_json::json!({
-            "user_id": user_id,
-            "email": email,
-            "display_name": display_name,
-        }),
-        &service_role_key,
-    )?;
+    client.service_role_insert("users", &serde_json::json!({
+        "user_id": user_id,
+        "email": email,
+        "display_name": display_name,
+    }), &service_role_key)?;
     eprintln!("  ✓ User record created");
 
-    client.service_role_insert(
-        "tenants",
-        &serde_json::json!({
-            "tenant_id": tenant_id,
-            "slug": tenant_slug,
-            "name": tenant_name,
-        }),
-        &service_role_key,
-    )?;
+    client.service_role_insert("tenants", &serde_json::json!({
+        "tenant_id": tenant_id,
+        "slug": tenant_slug,
+        "name": tenant_name,
+    }), &service_role_key)?;
     eprintln!("  ✓ Tenant '{tenant_slug}' created");
 
-    client.service_role_insert(
-        "tenant_memberships",
-        &serde_json::json!({
-            "tenant_id": tenant_id,
-            "user_id": user_id,
-            "role": "admin",
-        }),
-        &service_role_key,
-    )?;
+    client.service_role_insert("tenant_memberships", &serde_json::json!({
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "role": "admin",
+    }), &service_role_key)?;
     eprintln!("  ✓ Tenant membership (admin)");
 
-    client.service_role_insert(
-        "user_capabilities",
-        &serde_json::json!({
-            "user_id": user_id,
-            "capability": "founder",
-            "granted_by": user_id,
-        }),
-        &service_role_key,
-    )?;
+    client.service_role_insert("user_capabilities", &serde_json::json!({
+        "user_id": user_id,
+        "capability": "founder",
+        "granted_by": user_id,
+    }), &service_role_key)?;
     eprintln!("  ✓ Founder capability granted");
 
-    client.service_role_insert(
-        "apps",
-        &serde_json::json!({
-            "app_id": "ublx",
-            "tenant_id": tenant_id,
-            "name": "UBLX Headquarters",
-        }),
-        &service_role_key,
-    )?;
+    client.service_role_insert("apps", &serde_json::json!({
+        "app_id": "ublx",
+        "tenant_id": tenant_id,
+        "name": "UBLX Headquarters",
+    }), &service_role_key)?;
     eprintln!("  ✓ HQ app 'ublx' created");
 
-    client.service_role_insert(
-        "app_memberships",
-        &serde_json::json!({
-            "app_id": "ublx",
-            "tenant_id": tenant_id,
-            "user_id": user_id,
-            "role": "app_admin",
-        }),
-        &service_role_key,
-    )?;
+    client.service_role_insert("app_memberships", &serde_json::json!({
+        "app_id": "ublx",
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "role": "app_admin",
+    }), &service_role_key)?;
     eprintln!("  ✓ App membership (app_admin)");
 
     eprintln!();
@@ -1373,82 +1054,52 @@ fn cmd_founder_bootstrap(
     eprintln!("  Supabase Dashboard -> Settings -> API -> Service Role Key.");
     eprintln!("  The key used for bootstrap should not be reused.");
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "tenant_id": tenant_id,
-            "user_id": user_id,
-            "app_id": "ublx",
-        }),
-        &format!(
-            "\nBootstrap complete.\n\
+    pout(json, serde_json::json!({
+        "ok": true,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "app_id": "ublx",
+    }), &format!(
+        "\nBootstrap complete.\n\
          Tenant: {tenant_slug} ({tenant_name})\n\
          Founder: {email}\n\
          HQ App: ublx\n\n\
          Service role key is no longer needed. All operations now use JWT + RLS."
-        ),
-    )?;
+    ))?;
 
     Ok(())
 }
 
-fn cmd_app_create(
-    client: &SupabaseClient,
-    app_id: &str,
-    name: &str,
-    json: bool,
-) -> anyhow::Result<()> {
+fn cmd_app_create(client: &SupabaseClient, app_id: &str, name: &str, json: bool) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
     let user = client.get_user(&token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
 
     // Get first tenant membership to determine tenant_id
-    let memberships = client.postgrest_get(
-        "tenant_memberships",
-        &format!("select=tenant_id,role&user_id=eq.{user_id}&limit=1"),
-        &token,
-    )?;
-    let tenant_id = memberships
-        .as_array()
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id,role&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
         .and_then(|a| a.first())
         .and_then(|m| m["tenant_id"].as_str())
-        .ok_or_else(|| {
-            anyhow::anyhow!("No tenant membership found. Run `logline founder bootstrap` first.")
-        })?;
+        .ok_or_else(|| anyhow::anyhow!("No tenant membership found. Run `logline founder bootstrap` first."))?;
 
-    client.postgrest_insert(
-        "apps",
-        &serde_json::json!({
-            "app_id": app_id,
-            "tenant_id": tenant_id,
-            "name": name,
-        }),
-        &token,
-    )?;
+    client.postgrest_insert("apps", &serde_json::json!({
+        "app_id": app_id,
+        "tenant_id": tenant_id,
+        "name": name,
+    }), &token)?;
 
-    client.postgrest_insert(
-        "app_memberships",
-        &serde_json::json!({
-            "app_id": app_id,
-            "tenant_id": tenant_id,
-            "user_id": user_id,
-            "role": "app_admin",
-        }),
-        &token,
-    )?;
+    client.postgrest_insert("app_memberships", &serde_json::json!({
+        "app_id": app_id,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "role": "app_admin",
+    }), &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "app_id": app_id,
-            "tenant_id": tenant_id,
-        }),
-        &format!("App '{name}' ({app_id}) created under tenant {tenant_id}"),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "app_id": app_id,
+        "tenant_id": tenant_id,
+    }), &format!("App '{name}' ({app_id}) created under tenant {tenant_id}"))?;
 
     Ok(())
 }
@@ -1465,13 +1116,8 @@ fn cmd_app_handshake(
     let user = client.get_user(&token)?;
     let user_id = user["id"].as_str().unwrap_or("?");
 
-    let memberships = client.postgrest_get(
-        "tenant_memberships",
-        &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"),
-        &token,
-    )?;
-    let tenant_id = memberships
-        .as_array()
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
         .and_then(|a| a.first())
         .and_then(|m| m["tenant_id"].as_str())
         .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
@@ -1493,16 +1139,12 @@ fn cmd_app_handshake(
 
     client.postgrest_upsert("app_service_config", &body, "app_id,tenant_id", &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "app_id": app_id,
-            "service_url": service_url,
-            "capabilities": caps,
-        }),
-        &format!("Handshake complete for '{app_id}'.\nHQ can now reach {service_url}"),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "app_id": app_id,
+        "service_url": service_url,
+        "capabilities": caps,
+    }), &format!("Handshake complete for '{app_id}'.\nHQ can now reach {service_url}"))?;
 
     Ok(())
 }
@@ -1512,13 +1154,8 @@ fn cmd_app_config_export(client: &SupabaseClient, app_id: &str, json: bool) -> a
     let user = client.get_user(&token)?;
     let user_id = user["id"].as_str().unwrap_or("?");
 
-    let memberships = client.postgrest_get(
-        "tenant_memberships",
-        &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"),
-        &token,
-    )?;
-    let tenant_id = memberships
-        .as_array()
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
         .and_then(|a| a.first())
         .and_then(|m| m["tenant_id"].as_str())
         .unwrap_or("?");
@@ -1552,8 +1189,7 @@ fn cmd_app_list(client: &SupabaseClient, json: bool) -> anyhow::Result<()> {
             println!("No apps found.");
         } else {
             for app in arr {
-                println!(
-                    "  {} — {} (tenant: {})",
+                println!("  {} — {} (tenant: {})",
                     app["app_id"].as_str().unwrap_or("?"),
                     app["name"].as_str().unwrap_or("?"),
                     app["tenant_id"].as_str().unwrap_or("?"),
@@ -1573,15 +1209,13 @@ fn cmd_app_issue_service_token(
     description: Option<&str>,
     _json: bool,
 ) -> anyhow::Result<()> {
-    use chrono::{Duration, Utc};
-    use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
-    use sha2::{Digest, Sha256};
+    use jsonwebtoken::{encode, Header, EncodingKey, Algorithm};
+    use sha2::{Sha256, Digest};
+    use chrono::{Utc, Duration};
 
     let token = get_valid_token(client)?;
     let user = client.get_user(&token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("No user id"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("No user id"))?;
 
     // Get app to verify ownership and get tenant_id
     let apps = client.postgrest_get(
@@ -1589,12 +1223,10 @@ fn cmd_app_issue_service_token(
         &format!("select=app_id,tenant_id&app_id=eq.{}", app_id),
         &token,
     )?;
-    let app = apps
-        .as_array()
+    let app = apps.as_array()
         .and_then(|a| a.first())
         .ok_or_else(|| anyhow::anyhow!("App not found: {}", app_id))?;
-    let tenant_id = app["tenant_id"]
-        .as_str()
+    let tenant_id = app["tenant_id"].as_str()
         .ok_or_else(|| anyhow::anyhow!("App has no tenant_id"))?;
 
     // Get JWT secret from env
@@ -1609,7 +1241,7 @@ fn cmd_app_issue_service_token(
     // Build claims
     let now = Utc::now();
     let exp = now + Duration::days(ttl_days as i64);
-
+    
     let claims = serde_json::json!({
         "sub": app_id,
         "tenant_id": tenant_id,
@@ -1692,8 +1324,7 @@ fn cmd_app_list_service_tokens(
             println!("No active service tokens found.");
         } else {
             for t in arr {
-                println!(
-                    "  {} — app: {}, expires: {}, caps: {:?}",
+                println!("  {} — app: {}, expires: {}, caps: {:?}",
                     t["id"].as_str().unwrap_or("?"),
                     t["app_id"].as_str().unwrap_or("?"),
                     t["expires_at"].as_str().unwrap_or("?"),
@@ -1722,7 +1353,11 @@ fn cmd_app_trust(
 
     if level == "none" {
         // Remove from trusted_apps
-        client.postgrest_delete("trusted_apps", &format!("app_id=eq.{}", app_id), &token)?;
+        client.postgrest_delete(
+            "trusted_apps",
+            &format!("app_id=eq.{}", app_id),
+            &token,
+        )?;
         println!("App {} removed from trusted apps.", app_id);
     } else {
         // Upsert into trusted_apps
@@ -1739,34 +1374,21 @@ fn cmd_app_trust(
     Ok(())
 }
 
-fn cmd_tenant_create(
-    client: &SupabaseClient,
-    slug: &str,
-    name: &str,
-    json: bool,
-) -> anyhow::Result<()> {
+fn cmd_tenant_create(client: &SupabaseClient, slug: &str, name: &str, json: bool) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
 
-    client.postgrest_insert(
-        "tenants",
-        &serde_json::json!({
-            "tenant_id": slug,
-            "slug": slug,
-            "name": name,
-        }),
-        &token,
-    )?;
+    client.postgrest_insert("tenants", &serde_json::json!({
+        "tenant_id": slug,
+        "slug": slug,
+        "name": name,
+    }), &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "tenant_id": slug,
-            "slug": slug,
-            "name": name,
-        }),
-        &format!("Tenant '{name}' ({slug}) created"),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "tenant_id": slug,
+        "slug": slug,
+        "name": name,
+    }), &format!("Tenant '{name}' ({slug}) created"))?;
 
     Ok(())
 }
@@ -1782,13 +1404,8 @@ fn cmd_tenant_allowlist_add(
     let user = client.get_user(&token)?;
     let user_id = user["id"].as_str().unwrap_or("?");
 
-    let memberships = client.postgrest_get(
-        "tenant_memberships",
-        &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"),
-        &token,
-    )?;
-    let tenant_id = memberships
-        .as_array()
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
         .and_then(|a| a.first())
         .and_then(|m| m["tenant_id"].as_str())
         .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
@@ -1808,54 +1425,36 @@ fn cmd_tenant_allowlist_add(
 
     let email_norm = email.trim().to_lowercase();
 
-    client.postgrest_upsert(
-        "tenant_email_allowlist",
-        &serde_json::json!({
-            "tenant_id": tenant_id,
-            "email_normalized": email_norm,
-            "role_default": role,
-            "app_defaults": defaults,
-        }),
-        "tenant_id,email_normalized",
-        &token,
-    )?;
+    client.postgrest_upsert("tenant_email_allowlist", &serde_json::json!({
+        "tenant_id": tenant_id,
+        "email_normalized": email_norm,
+        "role_default": role,
+        "app_defaults": defaults,
+    }), "tenant_id,email_normalized", &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "email": email_norm,
-            "tenant_id": tenant_id,
-            "role": role,
-            "app_defaults": defaults,
-        }),
-        &format!("Added {email_norm} to allowlist (role: {role})"),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "email": email_norm,
+        "tenant_id": tenant_id,
+        "role": role,
+        "app_defaults": defaults,
+    }), &format!("Added {email_norm} to allowlist (role: {role})"))?;
 
     Ok(())
 }
 
 fn cmd_tenant_resolve(client: &SupabaseClient, slug: &str, json: bool) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
-    let tenants = client.postgrest_get(
-        "tenants",
-        &format!("select=tenant_id,slug,name,created_at&slug=eq.{slug}"),
-        &token,
-    )?;
+    let tenants = client.postgrest_get("tenants", &format!("select=tenant_id,slug,name,created_at&slug=eq.{slug}"), &token)?;
 
-    let tenant = tenants
-        .as_array()
+    let tenant = tenants.as_array()
         .and_then(|a| a.first())
         .ok_or_else(|| anyhow::anyhow!("Tenant with slug '{slug}' not found"))?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(tenant)?);
     } else {
-        println!(
-            "Tenant: {} ({})",
-            tenant["name"].as_str().unwrap_or("?"),
-            tenant["tenant_id"].as_str().unwrap_or("?")
-        );
+        println!("Tenant: {} ({})", tenant["name"].as_str().unwrap_or("?"), tenant["tenant_id"].as_str().unwrap_or("?"));
     }
 
     Ok(())
@@ -1872,17 +1471,10 @@ fn cmd_fuel_emit(
 ) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
     let user = client.get_user(&token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
 
-    let memberships = client.postgrest_get(
-        "tenant_memberships",
-        &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"),
-        &token,
-    )?;
-    let tenant_id = memberships
-        .as_array()
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
         .and_then(|a| a.first())
         .and_then(|m| m["tenant_id"].as_str())
         .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
@@ -1891,31 +1483,23 @@ fn cmd_fuel_emit(
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("{}-{}-{}-{}", app_id, user_id, unit_type, now_secs()));
 
-    client.postgrest_insert(
-        "fuel_events",
-        &serde_json::json!({
-            "idempotency_key": idem_key,
-            "tenant_id": tenant_id,
-            "app_id": app_id,
-            "user_id": user_id,
-            "units": units,
-            "unit_type": unit_type,
-            "source": source,
-        }),
-        &token,
-    )?;
+    client.postgrest_insert("fuel_events", &serde_json::json!({
+        "idempotency_key": idem_key,
+        "tenant_id": tenant_id,
+        "app_id": app_id,
+        "user_id": user_id,
+        "units": units,
+        "unit_type": unit_type,
+        "source": source,
+    }), &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "idempotency_key": idem_key,
-            "app_id": app_id,
-            "units": units,
-            "unit_type": unit_type,
-        }),
-        &format!("Fuel event emitted: {units} {unit_type} for {app_id}"),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "idempotency_key": idem_key,
+        "app_id": app_id,
+        "units": units,
+        "unit_type": unit_type,
+    }), &format!("Fuel event emitted: {units} {unit_type} for {app_id}"))?;
 
     Ok(())
 }
@@ -1929,18 +1513,11 @@ fn cmd_fuel_list(
 ) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
     let user = client.get_user(&token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
 
     // Get tenant_id from membership
-    let memberships = client.postgrest_get(
-        "tenant_memberships",
-        &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"),
-        &token,
-    )?;
-    let tenant_id = memberships
-        .as_array()
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
         .and_then(|a| a.first())
         .and_then(|m| m["tenant_id"].as_str())
         .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
@@ -1982,18 +1559,11 @@ fn cmd_fuel_summary(
 ) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
     let user = client.get_user(&token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
 
     // Get tenant_id from membership
-    let memberships = client.postgrest_get(
-        "tenant_memberships",
-        &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"),
-        &token,
-    )?;
-    let tenant_id = memberships
-        .as_array()
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
         .and_then(|a| a.first())
         .and_then(|m| m["tenant_id"].as_str())
         .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
@@ -2007,8 +1577,7 @@ fn cmd_fuel_summary(
     let events = client.postgrest_get("fuel_events", &query, &token)?;
 
     // Aggregate: (app_id, unit_type) -> total
-    let mut totals: std::collections::BTreeMap<(String, String), f64> =
-        std::collections::BTreeMap::new();
+    let mut totals: std::collections::BTreeMap<(String, String), f64> = std::collections::BTreeMap::new();
     if let Some(arr) = events.as_array() {
         for e in arr {
             let app = e["app_id"].as_str().unwrap_or("unknown").to_string();
@@ -2019,15 +1588,12 @@ fn cmd_fuel_summary(
     }
 
     if json {
-        let summary: Vec<_> = totals
-            .iter()
-            .map(|((app, ut), total)| {
-                serde_json::json!({
-                    "app_id": app,
-                    "unit_type": ut,
-                    "total": total,
-                })
-            })
+        let summary: Vec<_> = totals.iter()
+            .map(|((app, ut), total)| serde_json::json!({
+                "app_id": app,
+                "unit_type": ut,
+                "total": total,
+            }))
             .collect();
         println!("{}", serde_json::to_string_pretty(&summary)?);
     } else {
@@ -2038,217 +1604,6 @@ fn cmd_fuel_summary(
             println!("  {:<20} {:<15} {:>12.2}", app, ut, total);
         }
     }
-    Ok(())
-}
-
-fn cmd_fuel_reconcile(
-    client: &SupabaseClient,
-    from: Option<&str>,
-    to: Option<&str>,
-    price_card_version: Option<&str>,
-    json: bool,
-) -> anyhow::Result<()> {
-    let token = get_valid_token(client)?;
-    let to_ts = to
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
-    let from_ts = from
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| (chrono::Utc::now() - chrono::Duration::hours(24)).to_rfc3339());
-
-    let result = client.postgrest_rpc(
-        "backfill_fuel_valuations_l0",
-        &serde_json::json!({
-            "p_from": from_ts,
-            "p_to": to_ts,
-            "p_price_card_version": price_card_version,
-        }),
-        &token,
-    )?;
-
-    let affected = result.as_i64().unwrap_or(0);
-    let payload = serde_json::json!({
-        "ok": true,
-        "affected_rows": affected,
-        "from": from_ts,
-        "to": to_ts,
-        "price_card_version": price_card_version,
-    });
-
-    pout(
-        json,
-        payload,
-        &format!("Fuel reconcile finished: {affected} valuation rows processed"),
-    )?;
-    Ok(())
-}
-
-fn cmd_fuel_reconciliation_status(
-    client: &SupabaseClient,
-    days: u32,
-    app_id: Option<&str>,
-    source: Option<&str>,
-    json: bool,
-) -> anyhow::Result<()> {
-    let token = get_valid_token(client)?;
-    let from_day = (chrono::Utc::now() - chrono::Duration::days(days as i64))
-        .date_naive()
-        .to_string();
-
-    let mut drift_filters = format!("day=gte.{from_day}");
-    if let Some(app) = app_id {
-        drift_filters.push_str(&format!("&app_id=eq.{app}"));
-    }
-    if let Some(src) = source {
-        drift_filters.push_str(&format!("&source=eq.{src}"));
-    }
-    let drift_query = format!(
-        "select=day,app_id,source,event_count,usd_estimated_total,usd_settled_total,usd_effective_total,usd_drift_total&{drift_filters}&order=day.desc&limit=5000"
-    );
-    let drift = client.postgrest_get("fuel_valuation_drift_v1", &drift_query, &token)?;
-
-    let mut coverage_filters = format!("occurred_at=gte.{from_day}");
-    if let Some(app) = app_id {
-        coverage_filters.push_str(&format!("&app_id=eq.{app}"));
-    }
-    if let Some(src) = source {
-        coverage_filters.push_str(&format!("&source=eq.{src}"));
-    }
-    let coverage_query = format!(
-        "select=event_id,precision_level,usd_estimated,usd_settled&{coverage_filters}&limit=10000"
-    );
-    let coverage_rows = client.postgrest_get("fuel_points_v1", &coverage_query, &token)?;
-
-    let mut precision_counts: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
-    let mut settled_count: u64 = 0;
-    let mut total_count: u64 = 0;
-    let mut usd_estimated_total = 0.0f64;
-    let mut usd_settled_total = 0.0f64;
-
-    if let Some(rows) = coverage_rows.as_array() {
-        for row in rows {
-            total_count += 1;
-            let precision = row["precision_level"].as_str().unwrap_or("L0").to_string();
-            *precision_counts.entry(precision).or_insert(0) += 1;
-
-            let usd_estimated = row["usd_estimated"].as_f64().unwrap_or(0.0);
-            let usd_settled_opt = row["usd_settled"].as_f64();
-            usd_estimated_total += usd_estimated;
-            if let Some(usd_settled) = usd_settled_opt {
-                settled_count += 1;
-                usd_settled_total += usd_settled;
-            }
-        }
-    }
-
-    let settled_ratio = if total_count > 0 {
-        settled_count as f64 / total_count as f64
-    } else {
-        0.0
-    };
-
-    let payload = serde_json::json!({
-        "ok": true,
-        "window_days": days,
-        "from_day": from_day,
-        "filters": {
-            "app_id": app_id,
-            "source": source,
-        },
-        "coverage": {
-            "total_events": total_count,
-            "settled_events": settled_count,
-            "settled_ratio": settled_ratio,
-            "precision_counts": precision_counts,
-            "usd_estimated_total": usd_estimated_total,
-            "usd_settled_total": usd_settled_total,
-            "usd_drift_total": usd_settled_total - usd_estimated_total,
-        },
-        "drift_rows": drift,
-    });
-
-    if json {
-        println!("{}", serde_json::to_string_pretty(&payload)?);
-    } else {
-        println!("Fuel reconciliation status (last {days} days)");
-        println!("  From day: {from_day}");
-        println!("  Total events: {total_count}");
-        println!("  Settled events: {settled_count} ({:.2}%)", settled_ratio * 100.0);
-        println!("  USD estimated: {:.6}", usd_estimated_total);
-        println!("  USD settled:   {:.6}", usd_settled_total);
-        println!("  USD drift:     {:.6}", usd_settled_total - usd_estimated_total);
-        println!("\n  Precision coverage:");
-        for (precision, count) in precision_counts {
-            println!("    {precision}: {count}");
-        }
-    }
-
-    Ok(())
-}
-
-fn cmd_catalog_export(output: Option<&PathBuf>, _json: bool) -> anyhow::Result<()> {
-    fn collect_entries(
-        path: Vec<String>,
-        command: &clap::Command,
-        out: &mut Vec<serde_json::Value>,
-    ) {
-        let args: Vec<serde_json::Value> = command
-            .get_arguments()
-            .filter(|arg| !arg.is_hide_set())
-            .map(|arg| {
-                serde_json::json!({
-                    "id": arg.get_id().to_string(),
-                    "long": arg.get_long(),
-                    "short": arg.get_short().map(|c| c.to_string()),
-                    "required": arg.is_required_set(),
-                    "help": arg.get_help().map(|h| h.to_string()),
-                })
-            })
-            .collect();
-
-        let subcommands: Vec<String> = command
-            .get_subcommands()
-            .filter(|sub| !sub.is_hide_set())
-            .map(|sub| sub.get_name().to_string())
-            .collect();
-
-        out.push(serde_json::json!({
-            "path": path.join(" "),
-            "name": command.get_name(),
-            "about": command.get_about().map(|a| a.to_string()),
-            "args": args,
-            "subcommands": subcommands,
-        }));
-
-        for sub in command.get_subcommands().filter(|sub| !sub.is_hide_set()) {
-            let mut child_path = path.clone();
-            child_path.push(sub.get_name().to_string());
-            collect_entries(child_path, sub, out);
-        }
-    }
-
-    let root = Cli::command();
-    let mut entries = Vec::new();
-    collect_entries(vec![root.get_name().to_string()], &root, &mut entries);
-
-    let payload = serde_json::json!({
-        "catalog_version": "logline-cli.catalog.v1",
-        "generated_at": chrono::Utc::now().to_rfc3339(),
-        "binary": root.get_name(),
-        "commands": entries,
-    });
-
-    let serialized = serde_json::to_string_pretty(&payload)?;
-    if let Some(path) = output {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(path, serialized)?;
-        println!("Catalog exported: {}", path.display());
-    } else {
-        println!("{}", serialized);
-    }
-
     Ok(())
 }
 
@@ -2265,13 +1620,13 @@ fn cmd_storage_upload(
 ) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
 
-    let filename = file
-        .file_name()
+    let filename = file.file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
     let remote_path = path.unwrap_or(filename);
 
-    let content = std::fs::read(file).map_err(|e| anyhow::anyhow!("Failed to read file: {e}"))?;
+    let content = std::fs::read(file)
+        .map_err(|e| anyhow::anyhow!("Failed to read file: {e}"))?;
 
     let content_type = mime_guess::from_path(file)
         .first_or_octet_stream()
@@ -2279,16 +1634,12 @@ fn cmd_storage_upload(
 
     client.storage_upload(bucket, remote_path, &content, &content_type, &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "bucket": bucket,
-            "path": remote_path,
-            "size": content.len(),
-        }),
-        &format!("Uploaded {filename} to {bucket}/{remote_path}"),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "bucket": bucket,
+        "path": remote_path,
+        "size": content.len(),
+    }), &format!("Uploaded {filename} to {bucket}/{remote_path}"))?;
 
     Ok(())
 }
@@ -2307,22 +1658,16 @@ fn cmd_storage_download(
     let filename = remote_path.rsplit('/').next().unwrap_or(remote_path);
     let out_path = output.unwrap_or(std::path::Path::new(filename));
 
-    std::fs::write(out_path, &content).map_err(|e| anyhow::anyhow!("Failed to write file: {e}"))?;
+    std::fs::write(out_path, &content)
+        .map_err(|e| anyhow::anyhow!("Failed to write file: {e}"))?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "bucket": bucket,
-            "path": remote_path,
-            "output": out_path,
-            "size": content.len(),
-        }),
-        &format!(
-            "Downloaded {bucket}/{remote_path} to {}",
-            out_path.display()
-        ),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "bucket": bucket,
+        "path": remote_path,
+        "output": out_path,
+        "size": content.len(),
+    }), &format!("Downloaded {bucket}/{remote_path} to {}", out_path.display()))?;
 
     Ok(())
 }
@@ -2342,10 +1687,7 @@ fn cmd_storage_list(
     } else {
         let empty = vec![];
         let arr = files.as_array().unwrap_or(&empty);
-        println!(
-            "Files in {bucket}{}:",
-            prefix.map(|p| format!("/{p}")).unwrap_or_default()
-        );
+        println!("Files in {bucket}{}:", prefix.map(|p| format!("/{p}")).unwrap_or_default());
         for f in arr {
             let name = f["name"].as_str().unwrap_or("?");
             let size = f["metadata"]["size"].as_u64().unwrap_or(0);
@@ -2366,14 +1708,10 @@ fn cmd_storage_sign(
 
     let signed_url = client.storage_sign(bucket, remote_path, expires_in, &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "url": signed_url,
-            "expires_in": expires_in,
-        }),
-        &signed_url,
-    )?;
+    pout(json, serde_json::json!({
+        "url": signed_url,
+        "expires_in": expires_in,
+    }), &signed_url)?;
 
     Ok(())
 }
@@ -2388,15 +1726,11 @@ fn cmd_storage_delete(
 
     client.storage_delete(bucket, remote_path, &token)?;
 
-    pout(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "bucket": bucket,
-            "path": remote_path,
-        }),
-        &format!("Deleted {bucket}/{remote_path}"),
-    )?;
+    pout(json, serde_json::json!({
+        "ok": true,
+        "bucket": bucket,
+        "path": remote_path,
+    }), &format!("Deleted {bucket}/{remote_path}"))?;
 
     Ok(())
 }
@@ -2414,20 +1748,16 @@ fn cmd_broadcast_send(
 ) -> anyhow::Result<()> {
     let token = get_valid_token(client)?;
 
-    let payload: serde_json::Value =
-        serde_json::from_str(payload).map_err(|e| anyhow::anyhow!("Invalid JSON payload: {e}"))?;
+    let payload: serde_json::Value = serde_json::from_str(payload)
+        .map_err(|e| anyhow::anyhow!("Invalid JSON payload: {e}"))?;
 
     client.broadcast(channel, event, &payload, &token)?;
 
-    pout(
-        json_output,
-        serde_json::json!({
-            "ok": true,
-            "channel": channel,
-            "event": event,
-        }),
-        &format!("Broadcast sent to channel '{channel}' event '{event}'"),
-    )?;
+    pout(json_output, serde_json::json!({
+        "ok": true,
+        "channel": channel,
+        "event": event,
+    }), &format!("Broadcast sent to channel '{channel}' event '{event}'"))?;
 
     Ok(())
 }
@@ -2464,9 +1794,9 @@ fn cmd_onboard(app_id_arg: Option<&str>, skip_prompts: bool, json: bool) -> anyh
         io::stdin().read_line(&mut input)?;
         let trimmed = input.trim();
         if trimmed.is_empty() {
-            default
-                .map(|s| s.to_string())
-                .ok_or_else(|| anyhow::anyhow!("{} is required", label))
+            default.map(|s| s.to_string()).ok_or_else(|| {
+                anyhow::anyhow!("{} is required", label)
+            })
         } else {
             Ok(trimmed.to_string())
         }
@@ -2486,14 +1816,8 @@ fn cmd_onboard(app_id_arg: Option<&str>, skip_prompts: bool, json: bool) -> anyh
 
     // 2. Capabilities selection
     let available_caps = [
-        "job:submit",
-        "job:status",
-        "llm:call",
-        "llm:stream",
-        "storage:read",
-        "storage:write",
-        "fuel:emit",
-        "broadcast:send",
+        "job:submit", "job:status", "llm:call", "llm:stream",
+        "storage:read", "storage:write", "fuel:emit", "broadcast:send",
     ];
     if !json && !skip_prompts {
         println!("\nAvailable capabilities:");
@@ -2507,131 +1831,80 @@ fn cmd_onboard(app_id_arg: Option<&str>, skip_prompts: bool, json: bool) -> anyh
     let mut results: Vec<serde_json::Value> = Vec::new();
 
     // Step 1: Create app
-    if !json {
-        print!("\n📝 Registering app... ");
-        io::stdout().flush()?;
-    }
+    if !json { print!("\n📝 Registering app... "); io::stdout().flush()?; }
     match cmd_app_create_inner(&client, &app_id, &app_name, &token) {
         Ok(_) => {
-            if !json {
-                println!("✅");
-            }
+            if !json { println!("✅"); }
             results.push(serde_json::json!({"step": "create", "ok": true}));
         }
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("duplicate") || msg.contains("already exists") {
-                if !json {
-                    println!("⏭️  (already exists)");
-                }
+                if !json { println!("⏭️  (already exists)"); }
                 results.push(serde_json::json!({"step": "create", "ok": true, "skipped": true}));
             } else {
-                if !json {
-                    println!("❌ {}", e);
-                }
+                if !json { println!("❌ {}", e); }
                 results.push(serde_json::json!({"step": "create", "ok": false, "error": msg}));
             }
         }
     }
 
     // Step 2: Handshake
-    if !json {
-        print!("🤝 Performing handshake... ");
-        io::stdout().flush()?;
-    }
-    match cmd_app_handshake_inner(
-        &client,
-        &app_id,
-        &service_url,
-        None,
-        Some(&caps_input),
-        &token,
-    ) {
+    if !json { print!("🤝 Performing handshake... "); io::stdout().flush()?; }
+    match cmd_app_handshake_inner(&client, &app_id, &service_url, None, Some(&caps_input), &token) {
         Ok(_) => {
-            if !json {
-                println!("✅");
-            }
+            if !json { println!("✅"); }
             results.push(serde_json::json!({"step": "handshake", "ok": true}));
         }
         Err(e) => {
-            if !json {
-                println!("❌ {}", e);
-            }
-            results.push(
-                serde_json::json!({"step": "handshake", "ok": false, "error": e.to_string()}),
-            );
+            if !json { println!("❌ {}", e); }
+            results.push(serde_json::json!({"step": "handshake", "ok": false, "error": e.to_string()}));
         }
     }
 
     // Step 3: Export config
     let config_path = format!("./{}/config.env", app_id);
-    if !json {
-        print!("📄 Exporting config to {}... ", config_path);
-        io::stdout().flush()?;
-    }
+    if !json { print!("📄 Exporting config to {}... ", config_path); io::stdout().flush()?; }
     match cmd_app_config_export_to_file(&client, &app_id, &config_path, &token) {
         Ok(_) => {
-            if !json {
-                println!("✅");
-            }
-            results.push(
-                serde_json::json!({"step": "config_export", "ok": true, "path": config_path}),
-            );
+            if !json { println!("✅"); }
+            results.push(serde_json::json!({"step": "config_export", "ok": true, "path": config_path}));
         }
         Err(e) => {
-            if !json {
-                println!("❌ {}", e);
-            }
-            results.push(
-                serde_json::json!({"step": "config_export", "ok": false, "error": e.to_string()}),
-            );
+            if !json { println!("❌ {}", e); }
+            results.push(serde_json::json!({"step": "config_export", "ok": false, "error": e.to_string()}));
         }
     }
 
     // Step 4: PM2 ecosystem entry
-    if !json {
-        print!("⚙️  Adding PM2 ecosystem entry... ");
-        io::stdout().flush()?;
-    }
+    if !json { print!("⚙️  Adding PM2 ecosystem entry... "); io::stdout().flush()?; }
     match add_pm2_entry(&app_id, &local_port) {
         Ok(path) => {
-            if !json {
-                println!("✅");
-            }
+            if !json { println!("✅"); }
             results.push(serde_json::json!({"step": "pm2_config", "ok": true, "path": path}));
         }
         Err(e) => {
-            if !json {
-                println!("⚠️  {} (manual setup needed)", e);
-            }
-            results.push(
-                serde_json::json!({"step": "pm2_config", "ok": false, "error": e.to_string()}),
-            );
+            if !json { println!("⚠️  {} (manual setup needed)", e); }
+            results.push(serde_json::json!({"step": "pm2_config", "ok": false, "error": e.to_string()}));
         }
     }
 
     // Step 5: Cloudflare tunnel hint
     if !json {
-        println!(
-            "🌐 Cloudflare tunnel: add route for {}.logline.world -> localhost:{}",
-            app_id, local_port
-        );
+        println!("🌐 Cloudflare tunnel: add route for {}.logline.world -> localhost:{}", app_id, local_port);
         results.push(serde_json::json!({"step": "cloudflare_hint", "ok": true}));
     }
 
     // Summary
     let all_ok = results.iter().all(|r| r["ok"].as_bool().unwrap_or(false));
-
+    
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "app_id": app_id,
-                "service_url": service_url,
-                "steps": results,
-                "success": all_ok,
-            }))?
-        );
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "app_id": app_id,
+            "service_url": service_url,
+            "steps": results,
+            "success": all_ok,
+        }))?);
     } else {
         println!("\n{}", "─".repeat(50));
         if all_ok {
@@ -2657,9 +1930,7 @@ fn cmd_app_create_inner(
     token: &str,
 ) -> anyhow::Result<()> {
     let user = client.get_user(token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Cannot get user_id"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot get user_id"))?;
 
     // Get tenant from membership
     let memberships = client.postgrest_get(
@@ -2667,22 +1938,17 @@ fn cmd_app_create_inner(
         &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"),
         token,
     )?;
-    let tenant_id = memberships
-        .as_array()
+    let tenant_id = memberships.as_array()
         .and_then(|a| a.first())
         .and_then(|m| m["tenant_id"].as_str())
         .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
 
-    client.postgrest_insert(
-        "apps",
-        &serde_json::json!({
-            "id": app_id,
-            "tenant_id": tenant_id,
-            "name": name,
-            "status": "active",
-        }),
-        token,
-    )?;
+    client.postgrest_insert("apps", &serde_json::json!({
+        "id": app_id,
+        "tenant_id": tenant_id,
+        "name": name,
+        "status": "active",
+    }), token)?;
 
     Ok(())
 }
@@ -2696,9 +1962,7 @@ fn cmd_app_handshake_inner(
     token: &str,
 ) -> anyhow::Result<()> {
     let user = client.get_user(token)?;
-    let user_id = user["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Cannot get user_id"))?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot get user_id"))?;
 
     let caps_json: serde_json::Value = capabilities
         .map(|c| {
@@ -2744,8 +2008,7 @@ fn cmd_app_config_export_to_file(
 ) -> anyhow::Result<()> {
     // Get app record
     let apps = client.postgrest_get("apps", &format!("select=*&id=eq.{}", app_id), token)?;
-    let app = apps
-        .as_array()
+    let app = apps.as_array()
         .and_then(|a| a.first())
         .ok_or_else(|| anyhow::anyhow!("App not found: {}", app_id))?;
 
@@ -2754,15 +2017,9 @@ fn cmd_app_config_export_to_file(
     content.push_str(&format!("# Logline ecosystem config for {}\n", app_id));
     content.push_str(&format!("# Generated: {}\n\n", chrono_now()));
     content.push_str(&format!("LOGLINE_APP_ID={}\n", app_id));
-    content.push_str(&format!(
-        "LOGLINE_TENANT_ID={}\n",
-        app["tenant_id"].as_str().unwrap_or("")
-    ));
+    content.push_str(&format!("LOGLINE_TENANT_ID={}\n", app["tenant_id"].as_str().unwrap_or("")));
     content.push_str(&format!("NEXT_PUBLIC_SUPABASE_URL={}\n", client.config.url));
-    content.push_str(&format!(
-        "NEXT_PUBLIC_SUPABASE_ANON_KEY={}\n",
-        client.config.anon_key
-    ));
+    content.push_str(&format!("NEXT_PUBLIC_SUPABASE_ANON_KEY={}\n", client.config.anon_key));
 
     if let Some(url) = app["service_url"].as_str() {
         content.push_str(&format!("SERVICE_URL={}\n", url));
@@ -2781,12 +2038,11 @@ fn cmd_app_config_export_to_file(
 
 fn add_pm2_entry(app_id: &str, port: &str) -> anyhow::Result<String> {
     let ecosystem_path = "ecosystem.config.cjs";
-
+    
     // Check if file exists
     if !std::path::Path::new(ecosystem_path).exists() {
         // Create new ecosystem file
-        let content = format!(
-            r#"module.exports = {{
+        let content = format!(r#"module.exports = {{
   apps: [
     {{
       name: '{}',
@@ -2801,110 +2057,17 @@ fn add_pm2_entry(app_id: &str, port: &str) -> anyhow::Result<String> {
     }},
   ],
 }};
-"#,
-            app_id,
-            app_id,
-            port,
-            app_id = app_id
-        );
+"#, app_id, app_id, port, app_id = app_id);
         std::fs::write(ecosystem_path, content)?;
         return Ok(ecosystem_path.to_string());
     }
 
     // File exists - just notify user to add manually
-    anyhow::bail!(
-        "ecosystem.config.cjs exists - add {} entry manually",
-        app_id
-    )
+    anyhow::bail!("ecosystem.config.cjs exists - add {} entry manually", app_id)
 }
 
 fn chrono_now() -> String {
     chrono::Utc::now().to_rfc3339()
-}
-
-#[derive(Debug, Clone)]
-struct ObsMirrorConfig {
-    base_url: String,
-    token: Option<String>,
-}
-
-fn obs_mirror_config() -> Option<ObsMirrorConfig> {
-    let base_url = std::env::var("OBS_API_BASE_URL").ok()?;
-    let base_url = base_url.trim();
-    if base_url.is_empty() {
-        return None;
-    }
-    let token = std::env::var("OBS_API_TOKEN")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    Some(ObsMirrorConfig {
-        base_url: base_url.to_string(),
-        token,
-    })
-}
-
-fn make_request_id() -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    format!("logic-{}-{millis}", std::process::id())
-}
-
-fn maybe_emit_obs_event(
-    event_type: &str,
-    request_id: &str,
-    run_id: Option<&str>,
-    intention_id: Option<&str>,
-    payload: serde_json::Value,
-) {
-    let Some(cfg) = obs_mirror_config() else {
-        return;
-    };
-
-    let url = format!(
-        "{}/api/v1/events/ingest",
-        cfg.base_url.trim_end_matches('/')
-    );
-    let event = serde_json::json!({
-        "event_id": Uuid::new_v4().to_string(),
-        "event_type": event_type,
-        "occurred_at": chrono_now(),
-        "source": "logic",
-        "request_id": request_id,
-        "trace_id": request_id,
-        "parent_event_id": serde_json::Value::Null,
-        "intention_id": intention_id,
-        "run_id": run_id,
-        "issue_id": serde_json::Value::Null,
-        "pr_id": serde_json::Value::Null,
-        "deploy_id": serde_json::Value::Null,
-        "payload": payload,
-    });
-
-    let client = reqwest::blocking::Client::new();
-    let mut req = client.post(url).json(&event);
-    if let Some(token) = cfg.token {
-        req = req.bearer_auth(token);
-    }
-
-    match req.send() {
-        Ok(resp) if resp.status().is_success() => {}
-        Ok(resp) => {
-            eprintln!(
-                "Warning: obs-api ingest returned {} for event {}",
-                resp.status(),
-                event_type
-            );
-        }
-        Err(err) => {
-            eprintln!(
-                "Warning: failed to mirror logic event '{}' to obs-api: {}",
-                event_type, err
-            );
-        }
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2917,13 +2080,13 @@ fn cmd_ready(pipeline: &str, json: bool) -> anyhow::Result<()> {
     let mut issues: Vec<String> = Vec::new();
 
     // 1. Session
-    let session_ok = auth_session::load_session().is_some_and(|s| {
-        s.expires_at
-            > std::time::SystemTime::now()
+    let session_ok = auth_session::load_session()
+        .is_some_and(|s| {
+            s.expires_at > std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs()
-    });
+        });
     if !session_ok {
         issues.push("Session locked. Fix: logline auth unlock".into());
     }
@@ -2931,9 +2094,7 @@ fn cmd_ready(pipeline: &str, json: bool) -> anyhow::Result<()> {
     // 2. Auth identity
     let identity = auth_session::load_identity();
     let logged_in = identity.is_some();
-    let passkey_ok = identity
-        .as_ref()
-        .is_some_and(|i| i.auth_method == "passkey");
+    let passkey_ok = identity.as_ref().is_some_and(|i| i.auth_method == "passkey");
     let founder_blocked = identity.as_ref().is_some_and(|i| i.is_founder);
 
     if !logged_in {
@@ -2941,15 +2102,11 @@ fn cmd_ready(pipeline: &str, json: bool) -> anyhow::Result<()> {
     } else if !passkey_ok {
         issues.push(format!(
             "Auth method is '{}', must be 'passkey'. Fix: logline auth login --passkey",
-            identity
-                .as_ref()
-                .map(|i| i.auth_method.as_str())
-                .unwrap_or("?")
+            identity.as_ref().map(|i| i.auth_method.as_str()).unwrap_or("?")
         ));
     }
     if founder_blocked {
-        issues
-            .push("Founder/god mode blocked for infra. Fix: use operator/service account.".into());
+        issues.push("Founder/god mode blocked for infra. Fix: use operator/service account.".into());
     }
 
     // 3. Pipeline exists
@@ -2967,19 +2124,11 @@ fn cmd_ready(pipeline: &str, json: bool) -> anyhow::Result<()> {
         false
     };
     if !pipeline_exists {
-        issues.push(format!(
-            "Pipeline '{pipeline}' not found in logline.cicd.json"
-        ));
+        issues.push(format!("Pipeline '{pipeline}' not found in logline.cicd.json"));
     }
 
     // 4. Key secrets
-    let required_keys = [
-        "database_url",
-        "github_token",
-        "vercel_token",
-        "vercel_org_id",
-        "vercel_project_id",
-    ];
+    let required_keys = ["database_url", "github_token", "vercel_token", "vercel_org_id", "vercel_project_id"];
     let mut missing_keys: Vec<&str> = Vec::new();
     for key in &required_keys {
         if secrets::load_credential(key).is_none() {
@@ -3070,32 +2219,15 @@ pub fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     let mut year = 1970;
     loop {
         let days_in_year = if is_leap(year) { 366 } else { 365 };
-        if days < days_in_year {
-            break;
-        }
+        if days < days_in_year { break; }
         days -= days_in_year;
         year += 1;
     }
     let leap = is_leap(year);
-    let months: [u64; 12] = [
-        31,
-        if leap { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ];
+    let months: [u64; 12] = [31, if leap {29} else {28}, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let mut month = 0;
     for m in months {
-        if days < m {
-            break;
-        }
+        if days < m { break; }
         days -= m;
         month += 1;
     }
@@ -3117,10 +2249,7 @@ pub fn require_unlocked() -> anyhow::Result<commands::auth_session::SessionToken
 }
 
 /// Uber-gate: session + passkey + non-founder. Used by deploy/cicd/db commands.
-pub fn require_infra_identity() -> anyhow::Result<(
-    commands::auth_session::SessionToken,
-    commands::auth_session::AuthIdentity,
-)> {
+pub fn require_infra_identity() -> anyhow::Result<(commands::auth_session::SessionToken, commands::auth_session::AuthIdentity)> {
     commands::auth_session::require_infra_identity()
 }
 
@@ -3148,9 +2277,7 @@ fn run_supabase_stream(args: &[&str], workdir: Option<&PathBuf>) -> anyhow::Resu
 
     let status = cmd.status().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            anyhow::anyhow!(
-                "supabase CLI not found. Install with `brew install supabase/tap/supabase`"
-            )
+            anyhow::anyhow!("supabase CLI not found. Install with `brew install supabase/tap/supabase`")
         } else {
             anyhow::anyhow!(e)
         }
@@ -3181,3 +2308,4 @@ fn apply_supabase_env(cmd: &mut Command, _workdir: Option<&PathBuf>) {
     eprintln!("Warning: No SUPABASE_ACCESS_TOKEN found in keychain or env.");
     eprintln!("  Store it with: logline supabase store-token");
 }
+

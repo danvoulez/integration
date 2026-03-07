@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { ensureDbSchema } from '@/db/bootstrap';
 import { obsAlerts, obsEvents, obsRunState } from '@/db/schema';
+import { syncFuelAlerts } from '@/lib/obs/fuel';
 
 const sourceEnum = z.enum([
   'code247',
@@ -670,8 +671,10 @@ export async function getObsOpenAlerts(query: AlertsOpenQuery) {
     }
   }
 
+  await syncFuelAlerts({ limit: query.limit });
+
   const unresolved = await db.select().from(obsAlerts)
-    .where(inArray(obsAlerts.status, ['open', 'acked']));
+    .where(sql`${obsAlerts.status} in ('open', 'acked') and coalesce(${obsAlerts.source}, '') <> 'fuel'`);
   for (const alert of unresolved) {
     if (derivedById.has(alert.alert_id)) continue;
     await db.update(obsAlerts).set({

@@ -126,9 +126,27 @@ struct HarnessReport {
     generated_at: String,
     root: String,
     pipeline: String,
+    artifacts: HarnessArtifacts,
     steps: Vec<ExecutionRecord>,
     scenarios: Vec<ExecutionRecord>,
     summary: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HarnessArtifacts {
+    json_report: String,
+    markdown_summary: String,
+    tasklist_general: String,
+    capability_catalog: String,
+    capability_cookbook: String,
+    smoke_script: String,
+    contracts_script: String,
+    severe_suite_script: String,
+    logic_linear_meta: String,
+    code247_linear_meta: String,
+    root_code247_dir: String,
+    code247_evidence_dir: String,
+    code247_sqlite_db: String,
 }
 
 #[derive(Debug, Clone)]
@@ -155,8 +173,11 @@ pub fn cmd_harness(command: HarnessCommands, json: bool) -> Result<()> {
 fn cmd_harness_run(root: Option<PathBuf>, report: Option<PathBuf>, json: bool) -> Result<()> {
     let root = resolve_root(root)?;
     let request_id = format!("logic-harness-{}", Uuid::new_v4());
-    let report_path =
-        report.unwrap_or_else(|| root.join("artifacts").join("integration-severe-report.json"));
+    let report_path = report.unwrap_or_else(|| {
+        root.join("artifacts")
+            .join("integration-severe-report.json")
+    });
+    let markdown_path = report_path.with_extension("md");
 
     let mut steps = Vec::new();
     steps.push(run_external_step(
@@ -204,10 +225,7 @@ fn cmd_harness_run(root: Option<PathBuf>, report: Option<PathBuf>, json: bool) -
 
     let scenarios = run_integration_severe_suite(&root);
 
-    let step_failures = steps
-        .iter()
-        .filter(|item| item.status == "failed")
-        .count();
+    let step_failures = steps.iter().filter(|item| item.status == "failed").count();
     let scenario_failures = scenarios
         .iter()
         .filter(|item| item.applicable && item.status == "failed")
@@ -223,6 +241,7 @@ fn cmd_harness_run(root: Option<PathBuf>, report: Option<PathBuf>, json: bool) -
         generated_at: chrono::Utc::now().to_rfc3339(),
         root: root.display().to_string(),
         pipeline: "smoke+contracts+integration-severe+report".to_string(),
+        artifacts: collect_harness_artifacts(&root, &report_path, &markdown_path),
         steps,
         scenarios,
         summary: json!({
@@ -234,6 +253,7 @@ fn cmd_harness_run(root: Option<PathBuf>, report: Option<PathBuf>, json: bool) -
     };
 
     write_json_file(&report_path, &report_payload)?;
+    write_text_file(&markdown_path, &render_markdown_summary(&report_payload))?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report_payload)?);
@@ -241,12 +261,19 @@ fn cmd_harness_run(root: Option<PathBuf>, report: Option<PathBuf>, json: bool) -
         println!("Integration severe pipeline completed.");
         println!("request_id: {request_id}");
         println!("report: {}", report_path.display());
+        println!("summary_markdown: {}", markdown_path.display());
         println!(
             "summary: ok={} step_failures={} scenario_failures={} skipped={}",
             report_payload.summary["ok"].as_bool().unwrap_or(false),
-            report_payload.summary["step_failures"].as_u64().unwrap_or(0),
-            report_payload.summary["scenario_failures"].as_u64().unwrap_or(0),
-            report_payload.summary["scenario_skipped"].as_u64().unwrap_or(0)
+            report_payload.summary["step_failures"]
+                .as_u64()
+                .unwrap_or(0),
+            report_payload.summary["scenario_failures"]
+                .as_u64()
+                .unwrap_or(0),
+            report_payload.summary["scenario_skipped"]
+                .as_u64()
+                .unwrap_or(0)
         );
     }
 
@@ -337,7 +364,10 @@ fn cmd_harness_replay(
 
 fn cmd_harness_cookbook(root: Option<PathBuf>, output: Option<PathBuf>, json: bool) -> Result<()> {
     let root = resolve_root(root)?;
-    let mut argv = vec!["node".to_string(), "scripts/generate-cookbook.mjs".to_string()];
+    let mut argv = vec![
+        "node".to_string(),
+        "scripts/generate-cookbook.mjs".to_string(),
+    ];
     if let Some(path) = output.as_ref() {
         argv.push(path.display().to_string());
     }
@@ -454,7 +484,13 @@ fn cmd_intentions_publish(
             .join("manifest.intentions.json")
     });
     if !manifest_path.exists() {
-        cmd_intentions_generate(None, Some(manifest_path.clone()), "logic.logline.world", "logic-cli", true)?;
+        cmd_intentions_generate(
+            None,
+            Some(manifest_path.clone()),
+            "logic.logline.world",
+            "logic-cli",
+            true,
+        )?;
     }
 
     let meta_path = meta_output.unwrap_or_else(|| {
@@ -469,7 +505,13 @@ fn cmd_intentions_publish(
         ci_target.to_string(),
         meta_path.display().to_string(),
     ];
-    let result = run_external_step("INTENTIONS-PUBLISH", "Publish intentions", &root, &argv, &[]);
+    let result = run_external_step(
+        "INTENTIONS-PUBLISH",
+        "Publish intentions",
+        &root,
+        &argv,
+        &[],
+    );
     if result.status != "ok" {
         bail!(
             "intentions publish failed: {}",
@@ -682,7 +724,13 @@ fn integration_scenarios() -> Vec<ScenarioDefinition> {
 }
 
 fn run_scenario(root: &Path, scenario: &ScenarioDefinition) -> ExecutionRecord {
-    run_external_step(scenario.id, scenario.title, root, &scenario.argv, &scenario.env)
+    run_external_step(
+        scenario.id,
+        scenario.title,
+        root,
+        &scenario.argv,
+        &scenario.env,
+    )
 }
 
 fn run_external_step(
@@ -771,6 +819,174 @@ fn write_json_file(path: &Path, value: &impl Serialize) -> Result<()> {
     fs::write(path, format!("{serialized}\n"))
         .with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
+}
+
+fn write_text_file(path: &Path, text: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::write(path, text).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn collect_harness_artifacts(
+    root: &Path,
+    report_path: &Path,
+    markdown_path: &Path,
+) -> HarnessArtifacts {
+    HarnessArtifacts {
+        json_report: report_path.display().to_string(),
+        markdown_summary: markdown_path.display().to_string(),
+        tasklist_general: root.join("TASKLIST-GERAL.md").display().to_string(),
+        capability_catalog: root
+            .join("contracts/generated/capability-catalog.v1.json")
+            .display()
+            .to_string(),
+        capability_cookbook: root
+            .join("contracts/generated/cookbook.capabilities.v1.md")
+            .display()
+            .to_string(),
+        smoke_script: root.join("scripts/smoke.sh").display().to_string(),
+        contracts_script: root
+            .join("scripts/validate-contracts.sh")
+            .display()
+            .to_string(),
+        severe_suite_script: root
+            .join("scripts/integration-severe.sh")
+            .display()
+            .to_string(),
+        logic_linear_meta: root
+            .join("logic.logline.world/.code247/linear-meta.json")
+            .display()
+            .to_string(),
+        code247_linear_meta: root
+            .join("code247.logline.world/.code247/linear-meta.json")
+            .display()
+            .to_string(),
+        root_code247_dir: root.join(".code247").display().to_string(),
+        code247_evidence_dir: root
+            .join("code247.logline.world/evidence")
+            .display()
+            .to_string(),
+        code247_sqlite_db: root
+            .join("code247.logline.world/dual_agents.db")
+            .display()
+            .to_string(),
+    }
+}
+
+fn render_markdown_summary(report: &HarnessReport) -> String {
+    let ok = report.summary["ok"].as_bool().unwrap_or(false);
+    let step_failures = report.summary["step_failures"].as_u64().unwrap_or(0);
+    let scenario_failures = report.summary["scenario_failures"].as_u64().unwrap_or(0);
+    let scenario_skipped = report.summary["scenario_skipped"].as_u64().unwrap_or(0);
+
+    let mut sections = vec![
+        "# Operations Verify Summary".to_string(),
+        String::new(),
+        format!("- request_id: `{}`", report.request_id),
+        format!("- generated_at: `{}`", report.generated_at),
+        format!("- root: `{}`", report.root),
+        format!("- pipeline: `{}`", report.pipeline),
+        format!("- ok: `{}`", ok),
+        format!("- step_failures: `{}`", step_failures),
+        format!("- scenario_failures: `{}`", scenario_failures),
+        format!("- scenario_skipped: `{}`", scenario_skipped),
+        String::new(),
+        "## Artifact Links".to_string(),
+        format!("- json_report: `{}`", report.artifacts.json_report),
+        format!(
+            "- markdown_summary: `{}`",
+            report.artifacts.markdown_summary
+        ),
+        format!(
+            "- tasklist_general: `{}`",
+            report.artifacts.tasklist_general
+        ),
+        format!(
+            "- capability_catalog: `{}`",
+            report.artifacts.capability_catalog
+        ),
+        format!(
+            "- capability_cookbook: `{}`",
+            report.artifacts.capability_cookbook
+        ),
+        String::new(),
+        "## Traceability Paths".to_string(),
+        format!(
+            "- logic_linear_meta: `{}`",
+            report.artifacts.logic_linear_meta
+        ),
+        format!(
+            "- code247_linear_meta: `{}`",
+            report.artifacts.code247_linear_meta
+        ),
+        format!(
+            "- root_code247_dir: `{}`",
+            report.artifacts.root_code247_dir
+        ),
+        format!(
+            "- code247_evidence_dir: `{}`",
+            report.artifacts.code247_evidence_dir
+        ),
+        format!(
+            "- code247_sqlite_db: `{}`",
+            report.artifacts.code247_sqlite_db
+        ),
+        String::new(),
+        "## Execution Steps".to_string(),
+    ];
+
+    for step in &report.steps {
+        sections.push(format!(
+            "- {} `{}` elapsed={}ms exit_code={}",
+            step.id,
+            step.status,
+            step.elapsed_ms,
+            step.exit_code
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "n/a".to_string())
+        ));
+    }
+
+    sections.push(String::new());
+    sections.push("## Severe Scenarios".to_string());
+    for scenario in &report.scenarios {
+        sections.push(format!(
+            "- {} `{}` applicable=`{}` elapsed={}ms",
+            scenario.id, scenario.status, scenario.applicable, scenario.elapsed_ms
+        ));
+    }
+
+    let failed_steps: Vec<&ExecutionRecord> = report
+        .steps
+        .iter()
+        .filter(|record| record.status == "failed")
+        .collect();
+    let failed_scenarios: Vec<&ExecutionRecord> = report
+        .scenarios
+        .iter()
+        .filter(|record| record.status == "failed")
+        .collect();
+
+    if !failed_steps.is_empty() || !failed_scenarios.is_empty() {
+        sections.push(String::new());
+        sections.push("## Failures".to_string());
+        for record in failed_steps.into_iter().chain(failed_scenarios.into_iter()) {
+            sections.push(format!(
+                "- {}: {}",
+                record.id,
+                record
+                    .error
+                    .as_deref()
+                    .unwrap_or("command exited with non-zero status")
+            ));
+        }
+    }
+
+    sections.push(String::new());
+    sections.join("\n")
 }
 
 fn resolve_root(root: Option<PathBuf>) -> Result<PathBuf> {

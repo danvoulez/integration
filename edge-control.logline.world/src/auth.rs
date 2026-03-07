@@ -1,8 +1,8 @@
 use axum::http::{header, HeaderMap};
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 
-use crate::{config::Config, models::ErrorResponseV1};
+use crate::{models::ErrorResponseV1, AppState};
 
 #[derive(Clone, Debug)]
 pub struct AuthContext {
@@ -41,22 +41,39 @@ fn bearer_token(headers: &HeaderMap) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn decode_supabase_hs256(token: &str, config: &Config) -> Option<AuthContext> {
-    let secret = config.supabase_jwt_secret.as_deref()?;
+async fn decode_supabase_jwks(token: &str, state: &AppState) -> Option<AuthContext> {
+    let jwks_url = state.config.supabase_jwks_url.as_deref()?;
+    let header = decode_header(token).ok()?;
+    let kid = header.kid?;
 
-    let mut validation = Validation::new(Algorithm::HS256);
-    if let Some(aud) = &config.supabase_jwt_audience {
+    let jwks = state
+        .http_client
+        .get(jwks_url)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json::<JwkSet>()
+        .await
+        .ok()?;
+    let jwk = jwks
+        .keys
+        .into_iter()
+        .find(|entry| entry.common.key_id == Some(kid.clone()))?;
+    let key = DecodingKey::from_jwk(&jwk).ok()?;
+
+    let mut validation = Validation::new(match header.alg {
+        Algorithm::RS256 | Algorithm::RS384 | Algorithm::RS512 => header.alg,
+        _ => Algorithm::RS256,
+    });
+    if let Some(aud) = &state.config.supabase_jwt_audience {
         validation.set_audience(&[aud]);
     } else {
         validation.validate_aud = false;
     }
 
-    let decoded = decode::<JwtClaims>(
-        token,
-        &DecodingKey::from_secret(secret.as_bytes()),
-        &validation,
-    )
-    .ok()?;
+    let decoded = decode::<JwtClaims>(token, &key, &validation).ok()?;
     let claims = decoded.claims;
 
     let app_id = if claims.role.as_deref() == Some("service") {
@@ -79,11 +96,11 @@ fn decode_supabase_hs256(token: &str, config: &Config) -> Option<AuthContext> {
     })
 }
 
-pub fn validate_headers(
+pub async fn validate_headers(
     headers: &HeaderMap,
-    config: &Config,
+    state: &AppState,
 ) -> Result<AuthContext, ErrorResponseV1> {
-    if !config.auth_is_configured() {
+    if !state.config.auth_is_configured() {
         return Err(ErrorResponseV1::new(
             None,
             "service_misconfigured",
@@ -94,11 +111,12 @@ pub fn validate_headers(
     let token = bearer_token(headers)
         .ok_or_else(|| ErrorResponseV1::new(None, "unauthorized", "Missing bearer token"))?;
 
-    if let Some(ctx) = decode_supabase_hs256(&token, config) {
+    if let Some(ctx) = decode_supabase_jwks(&token, state).await {
         return Ok(ctx);
     }
 
-    if config
+    if state
+        .config
         .internal_api_token
         .as_deref()
         .is_some_and(|expected| expected == token)

@@ -18,6 +18,15 @@ Responsibilities:
 
 ## Run
 
+Preferir secrets injetados por `Doppler` no ambiente real:
+
+```bash
+cd edge-control.logline.world
+doppler run --project logline-ecosystem --config dev -- cargo run
+```
+
+Fallback local/manual apenas para dev isolado:
+
 ```bash
 cd edge-control.logline.world
 cp .env.example .env
@@ -43,12 +52,18 @@ Fuel notes:
   - `EDGE_CONTROL_DEFAULT_TENANT_ID`
   - `EDGE_CONTROL_DEFAULT_APP_ID`
   - `EDGE_CONTROL_DEFAULT_USER_ID`
+- Idempotency backend:
+  - `EDGE_CONTROL_IDEMPOTENCY_BACKEND=auto|supabase|sqlite` (`auto` prefers Supabase when configured)
+  - `EDGE_CONTROL_STATE_DB_PATH` remains available for local dev/test fallback
 - Optional observability mirroring to `obs-api`:
   - `OBS_API_BASE_URL` (e.g. `https://obs-api.logline.world`)
   - `OBS_API_TOKEN` (JWT/service token with `obs:ingest` scope)
 
 Orchestration notes:
-- Requires `CODE247_BASE_URL` and `CODE247_INTENTIONS_TOKEN`
+- Requires `CODE247_BASE_URL`
+- Preferred auth path is `SUPABASE_JWT_SECRET` (+ optional `SUPABASE_JWT_AUDIENCE`) so `edge-control` signs a short-lived service JWT per request for `Code247`
+- `CODE247_INTENTIONS_TOKEN` remains supported only as legacy fallback during transition
+- In operação normal, obter esses secrets via `doppler run`, não via `.env` versionado/manual
 - Checkpoint enforcement:
   - `/v1/orchestrate/intention-confirmed` only accepts `YES_HUMAN_1`
   - `/v1/orchestrate/rollback` only accepts `YES_HUMAN_2`

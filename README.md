@@ -50,6 +50,9 @@ Monorepo do ecossistema LogLine — infraestrutura de automação, billing e gov
 ## Quick Start
 
 ```bash
+# Verificação operacional unificada
+./scripts/verify-operations.sh
+
 # Validar contratos
 ./scripts/validate-contracts.sh
 
@@ -69,6 +72,17 @@ pm2 status
 | [SERVICE_TOPOLOGY.md](SERVICE_TOPOLOGY.md) | Rede, portas, DNS |
 | [FUEL_SYSTEM_SPEC.md](FUEL_SYSTEM_SPEC.md) | Sistema Fuel (3 camadas) |
 | [TASKLIST-GERAL.md](TASKLIST-GERAL.md) | Backlog atual |
+
+## Operação
+
+- `./scripts/verify-operations.sh`: entrypoint oficial para `smoke + sync-canon check + cookbook + contracts + integration-severe`, gerando:
+  - `artifacts/operations-verify-report.json`
+  - `artifacts/operations-verify-report.md`
+- `./scripts/security-scan.sh`: varredura oficial de supply chain do monorepo; executa `cargo audit` em todos os `Cargo.lock` e `npm audit` nos `package-lock.json`, gravando `artifacts/security-scan-report.txt`.
+- `./scripts/smoke-code247-stage-lease.sh`: smoke oficial de previsibilidade sob falha do `Code247`; injeta um job sintético com lease vencida e exige transição fail-closed para `FAILED` com evento único `lease_expired`.
+- `./scripts/verify-code247-state-governance.sh`: prova oficial de governança de estado do `Code247`, cobrindo via HTTP os caminhos `In Progress -> Ready for Release`, bloqueio de `In Progress -> Done` e `Ready for Release -> Done`.
+- `./scripts/smoke-obs-api-auth.sh`: smoke autenticado do `obs-api` para Fuel (`dashboard`, `alerts`, `calibration`, `reconciliation`, `ops`) com JWT de escopo real e relatório em `artifacts/obs-api-auth-smoke-report.json`. Rodar com `doppler run -- ./scripts/smoke-obs-api-auth.sh`.
+- `./scripts/smoke-llm-gateway-auth.sh`: smoke autenticado do `llm-gateway` cobrindo JWT service token, compat mode legado e bloqueio quando legacy está `disabled`, com relatório em `artifacts/llm-gateway-auth-smoke-report.json`. Rodar com `doppler run -- ./scripts/smoke-llm-gateway-auth.sh`.
 
 ## Fuel System
 
@@ -98,6 +112,8 @@ Integration/
 ## Secrets
 
 Secrets via Doppler (`doppler run`) ou macOS Keychain via CLI (`logline secrets`).
+
+Para serviços que dependem de `SUPABASE_*`, `LINEAR_*`, `OBS_API_*` ou JWTs service-to-service, `Doppler` é o caminho padrão de operação. `.env` local fica restrito a dev/teste isolado.
 
 **Nunca** commitar secrets. Ver [SECRETS_DOPPLER_RUNBOOK.md](SECRETS_DOPPLER_RUNBOOK.md).
 

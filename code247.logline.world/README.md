@@ -56,6 +56,15 @@ Validação do contrato de extensões Linear (`x_*`):
 
 Todas as configurações foram centralizadas no arquivo `.env`.
 
+Em ambiente real, os secrets devem ser injetados via `Doppler`:
+
+```bash
+cd code247.logline.world
+doppler run --project logline-ecosystem --config dev -- cargo run
+```
+
+`.env` local continua aceitável apenas para dev/teste isolado.
+
 - `DB_PATH` (default: `dual_agents.db`)
 - `EVIDENCE_PATH` (default: `evidence`)
 - `REPO_ROOT` (default: `.`)
@@ -66,8 +75,10 @@ Todas as configurações foram centralizadas no arquivo `.env`.
 - `OLLAMA_MODEL` (default: `codellama`)
 - `OLLAMA_BASE_URL` (default: `http://localhost:11434`)
 - `LINEAR_API_KEY` (opcional; necessário para fluxo legacy GraphQL sem OAuth)
+- `LINEAR_API_BASE_URL` (opcional; default `https://api.linear.app`, útil para smoke/local mock)
 - `LINEAR_CLIENT_ID` (OAuth app)
 - `LINEAR_CLIENT_SECRET` (OAuth app)
+- `LINEAR_OAUTH_BASE_URL` (opcional; default `https://linear.app`, útil para smoke/local mock)
 - `LINEAR_OAUTH_REDIRECT_URI` (callback OAuth)
 - `LINEAR_OAUTH_SCOPES` (default: `read write comments:create issues:create`)
 - `LINEAR_OAUTH_ACTOR` (default: `app`)
@@ -84,7 +95,7 @@ Todas as configurações foram centralizadas no arquivo `.env`.
 - `LINEAR_DONE_STATE_TYPE` (default: `completed`)
 - `CODE247_PUBLIC_URL` (default: `https://code247.logline.world`)
 - `CODE247_INTENTIONS_TOKEN` (fallback legado; opcional quando JWT está ativo)
-- `CODE247_AUTH_ALLOW_LEGACY_TOKEN` (default: `true`; quando `false`, força JWT)
+- `CODE247_AUTH_ALLOW_LEGACY_TOKEN` (default: `false`; manter `true` apenas como escape hatch temporário de migração)
 - `SUPABASE_JWT_SECRET` (validação principal de Bearer JWT HS256)
 - `SUPABASE_JWT_SECRET_LEGACY` (fallback para rotação de segredo JWT)
 - `SUPABASE_JWT_AUDIENCE` (opcional; valida `aud`)
@@ -108,6 +119,13 @@ Todas as configurações foram centralizadas no arquivo `.env`.
 - `HEALTH_PORT` (default: `4001`)
 - `POLL_INTERVAL_MS` (default: `1000`)
 - `MAX_REVIEW_ITERATIONS` (default: `2`)
+- `CODE247_STAGE_LEASE_OWNER` (default: UUID por processo) identificador do worker que segura lease de etapa
+- `CODE247_STAGE_LEASE_SWEEP_INTERVAL_SECONDS` (default: `30`) intervalo do sweeper lateral que aplica expiração de lease
+- `CODE247_STAGE_TIMEOUT_PLANNING_SECONDS` (default: `900`)
+- `CODE247_STAGE_TIMEOUT_CODING_SECONDS` (default: `1800`)
+- `CODE247_STAGE_TIMEOUT_REVIEWING_SECONDS` (default: `900`)
+- `CODE247_STAGE_TIMEOUT_VALIDATING_SECONDS` (default: `1200`)
+- `CODE247_STAGE_TIMEOUT_COMMITTING_SECONDS` (default: `2100`)
 - `CODE247_MANIFEST_PATH` (default: `.code247/workspace.manifest.json`)
 - `CODE247_MANIFEST_SCHEMA_PATH` (default: `schemas/workspace.manifest.schema.json`)
 - `CODE247_MANIFEST_REQUIRED` (default: `false`)
@@ -119,10 +137,27 @@ Regras operacionais atuais:
 - Auth JWT aceita `scope`/`scopes` (string/array) e grants de projeto em `code247_projects` ou scopes `code247:project:<workspace>/<project>` (`workspace/*` e `*` suportados).
 - O pipeline de código **não move mais a issue para Done** automaticamente ao abrir/mergear PR.
 - `POST /intentions/sync` só move para Done quando `status=success` **e** existe evidência (`ci.url` ou `evidence[]`).
+- Verificação oficial de governança de estado: `../scripts/verify-code247-state-governance.sh` roda os testes HTTP integrados de `/intentions` + `/intentions/sync` com mock local do Linear, cobrindo:
+  - `In Progress -> Ready for Release` com evidência de CI
+  - bloqueio de `In Progress -> Done` mesmo com deploy
+  - `Ready for Release -> Done` com evidência de deploy
 - Pipeline calcula `risk_score` determinístico por PR e grava evidência `risk`.
 - PR classificado como `substantial` aplica gates automatizados mais rígidos (cloud/no-merge), sem exigir human merge por padrão.
 - PR classificado como `light` tenta auto-merge no GitHub assim que checks estiverem verdes e `mergeable_state=clean`.
+- Claim de `PENDING` agora é atômico no SQLite e já promove o job para `PLANNING` com lease; isso evita double execution entre instâncias antes do pipeline começar.
+- Etapas `PLANNING/CODING/REVIEWING/VALIDATING/COMMITTING` agora carregam `lease_expires_at` + `heartbeat_at`; expiração de lease vira transição fail-closed normal para `FAILED`, com log/evidência/comentário assíncrono.
 - Pipeline fail-closed exige contrato de plano e evidências antes de merge/transição de estado: `plan_contract`, `acceptance`, `how_to_test`, `backout`, `validation`, `risk`, `pr`, `checks_link`.
+
+Smoke operacional recomendado para a camada de lease:
+
+```bash
+DB_PATH=/abs/path/to/dual_agents.db ./scripts/smoke-code247-stage-lease.sh
+```
+
+O smoke injeta um job sintético em `CODING` com `lease_expires_at` já vencida e valida três invariantes:
+- transição deterministicamente fail-closed para `FAILED`
+- emissão de exatamente um evento `lease_expired` no `execution_log`
+- ausência de comentário Linear para issues `smoke:*`
 
 ## Documentação Linear
 
