@@ -206,6 +206,52 @@ paths:
         '401':
           $ref: '#/components/responses/Error401'
 
+  /api/v1/code247/run-timeline:
+    get:
+      tags: [Code247]
+      summary: Get Code247 operational run timeline
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 30 }
+        - in: query
+          name: jobs_limit
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000 }
+        - in: query
+          name: tenant_id
+          schema: { type: string }
+        - in: query
+          name: app_id
+          schema: { type: string }
+        - in: query
+          name: job_id
+          schema: { type: string }
+        - in: query
+          name: issue_id
+          schema: { type: string }
+        - in: query
+          name: order
+          schema: { type: string, enum: [asc, desc] }
+      responses:
+        '200':
+          description: Run timeline payload
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResponseEnvelopeBase'
+                  - type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+
   /api/v1/dashboards/summary:
     get:
       tags: [Dashboards]

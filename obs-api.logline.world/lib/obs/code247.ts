@@ -16,6 +16,19 @@ export const code247StageTelemetryQuerySchema = z.object({
 
 export type Code247StageTelemetryQuery = z.infer<typeof code247StageTelemetryQuerySchema>;
 
+export const code247RunTimelineQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(30).default(14),
+  jobs_limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(1000).default(500),
+  tenant_id: z.string().trim().min(1).max(128).optional(),
+  app_id: z.string().trim().min(1).max(128).default('code247'),
+  job_id: z.string().trim().min(1).max(128).optional(),
+  issue_id: z.string().trim().min(1).max(128).optional(),
+  order: z.enum(['asc', 'desc']).default('desc'),
+});
+
+export type Code247RunTimelineQuery = z.infer<typeof code247RunTimelineQuerySchema>;
+
 type StageAggregateRow = {
   stage_family: string | null;
   raw_stage_count: string | number | null;
@@ -51,6 +64,30 @@ type SlowestRow = {
   duration_ms: string | number | null;
   fuel_points_total: string | number | null;
   usd_effective_total: string | number | null;
+  outcome: string | null;
+  occurred_at: string | Date;
+};
+
+type TimelineJobRow = {
+  job_id: string;
+  issue_id: string;
+  status: string;
+  retries: string | number | null;
+  last_error: string | null;
+  created_at: string | Date;
+  updated_at: string | Date;
+};
+
+type TimelineEntryRow = {
+  job_id: string;
+  issue_id: string;
+  record_type: string;
+  stage: string | null;
+  status: string | null;
+  event_type: string | null;
+  detail: string | null;
+  duration_ms: string | number | null;
+  model_used: string | null;
   outcome: string | null;
   occurred_at: string | Date;
 };
@@ -358,6 +395,218 @@ export async function getCode247StageTelemetry(query: Code247StageTelemetryQuery
         duration_ms: toNumber(row.duration_ms),
         fuel_points_total: toNumber(row.fuel_points_total),
         usd_effective_total: toNumber(row.usd_effective_total),
+        outcome: row.outcome,
+        occurred_at: toIso(row.occurred_at),
+      })),
+    };
+  } catch (error) {
+    if (isUndefinedRelationError(error)) {
+      return emptyPayload;
+    }
+    throw error;
+  }
+}
+
+export async function getCode247RunTimeline(query: Code247RunTimelineQuery) {
+  await ensureDbSchema();
+
+  const now = new Date();
+  const from = new Date(now.getTime() - query.days * 24 * 60 * 60 * 1000);
+  const fromIso = from.toISOString();
+  const tenantId = query.tenant_id ?? null;
+  const appId = query.app_id ?? 'code247';
+  const jobId = query.job_id ?? null;
+  const issueId = query.issue_id ?? null;
+  const orderSql = query.order === 'asc' ? sql`asc` : sql`desc`;
+  const scopedJobsLimit = jobId || issueId ? Math.max(query.jobs_limit, 100) : query.jobs_limit;
+
+  const filteredJobs = sql`
+    with filtered_jobs as (
+      select
+        j.id,
+        j.issue_id,
+        j.status,
+        j.payload,
+        j.retries,
+        j.last_error,
+        j.created_at,
+        j.updated_at
+      from code247_jobs j
+      where j.updated_at >= cast(${fromIso} as timestamptz)
+        and (${tenantId}::text is null or j.tenant_id = ${tenantId})
+        and (${appId}::text is null or j.app_id = ${appId})
+        and (${jobId}::text is null or j.id = ${jobId})
+        and (${issueId}::text is null or j.issue_id = ${issueId})
+      order by j.updated_at desc
+      limit ${scopedJobsLimit}
+    )
+  `;
+
+  const emptyPayload = {
+    generated_at: now.toISOString(),
+    window: {
+      days: query.days,
+      from: fromIso,
+      to: now.toISOString(),
+    },
+    filters: {
+      tenant_id: tenantId,
+      app_id: appId,
+      job_id: jobId,
+      issue_id: issueId,
+      order: query.order,
+    },
+    jobs_limit: query.jobs_limit,
+    limit: query.limit,
+    job_count: 0,
+    jobs: [] as Array<{
+      job_id: string;
+      issue_id: string;
+      status: string;
+      retries: number;
+      last_error: string | null;
+      created_at: string;
+      updated_at: string;
+    }>,
+    items: [] as Array<{
+      job_id: string;
+      issue_id: string;
+      record_type: string;
+      stage: string | null;
+      status: string | null;
+      event_type: string | null;
+      detail: string | null;
+      duration_ms: number;
+      model_used: string | null;
+      outcome: string | null;
+      occurred_at: string;
+    }>,
+  };
+
+  try {
+    const [jobs, items] = await Promise.all([
+      executeRows<TimelineJobRow>(sql`
+        ${filteredJobs}
+        select
+          id as job_id,
+          issue_id,
+          status,
+          retries,
+          last_error,
+          created_at,
+          updated_at
+        from filtered_jobs
+        order by updated_at desc
+      `),
+      executeRows<TimelineEntryRow>(sql`
+        ${filteredJobs}
+        select *
+        from (
+          select
+            j.id as job_id,
+            j.issue_id,
+            'job_created'::text as record_type,
+            j.status as stage,
+            j.status as status,
+            'code247.job.created'::text as event_type,
+            j.payload::text as detail,
+            null::integer as duration_ms,
+            null::text as model_used,
+            null::text as outcome,
+            j.created_at as occurred_at
+          from filtered_jobs j
+
+          union all
+
+          select
+            j.id as job_id,
+            j.issue_id,
+            'job_status'::text as record_type,
+            j.status as stage,
+            j.status as status,
+            'code247.job.status'::text as event_type,
+            j.last_error as detail,
+            null::integer as duration_ms,
+            null::text as model_used,
+            null::text as outcome,
+            j.updated_at as occurred_at
+          from filtered_jobs j
+
+          union all
+
+          select
+            c.job_id,
+            j.issue_id,
+            'checkpoint'::text as record_type,
+            c.stage,
+            j.status,
+            null::text as event_type,
+            c.data as detail,
+            null::integer as duration_ms,
+            null::text as model_used,
+            null::text as outcome,
+            c.created_at as occurred_at
+          from code247_checkpoints c
+          join filtered_jobs j on j.id = c.job_id
+
+          union all
+
+          select
+            e.job_id,
+            j.issue_id,
+            'execution_event'::text as record_type,
+            e.stage,
+            j.status,
+            e.event_type,
+            coalesce(e.output, e.input) as detail,
+            e.duration_ms,
+            e.model_used,
+            e.metadata->>'outcome' as outcome,
+            e.occurred_at as occurred_at
+          from code247_events e
+          join filtered_jobs j on j.id = e.job_id
+        ) timeline
+        order by occurred_at ${orderSql}, record_type asc
+        limit ${query.limit}
+      `),
+    ]);
+
+    return {
+      generated_at: now.toISOString(),
+      window: {
+        days: query.days,
+        from: fromIso,
+        to: now.toISOString(),
+      },
+      filters: {
+        tenant_id: tenantId,
+        app_id: appId,
+        job_id: jobId,
+        issue_id: issueId,
+        order: query.order,
+      },
+      jobs_limit: query.jobs_limit,
+      limit: query.limit,
+      job_count: jobs.length,
+      jobs: jobs.map((row) => ({
+        job_id: row.job_id,
+        issue_id: row.issue_id,
+        status: row.status,
+        retries: toNumber(row.retries),
+        last_error: row.last_error,
+        created_at: toIso(row.created_at),
+        updated_at: toIso(row.updated_at),
+      })),
+      items: items.map((row) => ({
+        job_id: row.job_id,
+        issue_id: row.issue_id,
+        record_type: row.record_type,
+        stage: row.stage,
+        status: row.status,
+        event_type: row.event_type,
+        detail: row.detail,
+        duration_ms: toNumber(row.duration_ms),
+        model_used: row.model_used,
         outcome: row.outcome,
         occurred_at: toIso(row.occurred_at),
       })),

@@ -60,7 +60,7 @@ Sem pendências abertas nesta frente.
 
 - [ ] A-001: `C247-RDY-001` JWT+scope completo nas rotas críticas.
 - [ ] A-005: `C247-RDY-007/008` merge queue + security scan obrigatório para repos críticos.
-- [ ] A-007: `C247-RDY-012` timeline operacional do `Code247` validada no obs-api (telemetria de etapa já exposta em `/api/v1/code247/stage-telemetry`).
+- [x] A-007: `C247-RDY-012` timeline operacional do `Code247` validada no obs-api (telemetria de etapa exposta em `/api/v1/code247/stage-telemetry`).
 
 **DoD Agent A:** estado, merge policy e control-plane protegidos por validação central + testes verdes + logs auditáveis.
 
@@ -138,6 +138,7 @@ Status atual (2026-03-06): `./scripts/integration-severe.sh` segue verde no base
 - [x] Resilience layer compartilhada com retries/backoff + circuit breaker aplicada às integrações críticas de `llm-gateway`, `Linear OAuth/GraphQL` e `GitHub PR/status/merge`.
 - [x] Testes HTTP integrados de governança de estado (`/intentions` + `/intentions/sync`) cobrindo `In Progress -> Ready for Release`, bloqueio de `In Progress -> Done` e `Ready for Release -> Done`, com gate oficial em CI.
 - [x] Telemetria de latência/custo por etapa do `Code247` exposta no `obs-api` em `/api/v1/code247/stage-telemetry`, com smoke autenticado cobrindo acesso via JWT.
+- [x] Timeline operacional do `Code247` exposta no `obs-api` em `/api/v1/code247/run-timeline`, combinando `jobs`, `checkpoints` e `code247_events` com validação via smoke autenticado.
 
 ### edge-control
 - [x] Serviço de control-plane funcional com auth, request id, rate-limit e middleware de idempotência.

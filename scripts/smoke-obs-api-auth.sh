@@ -176,6 +176,7 @@ ops_get_path="/api/v1/fuel/ops?tenant_id=${TENANT_ID}&app_id=${APP_ID}&days=14"
 ops_post_path="/api/v1/fuel/ops"
 ops_post_body='{"job_name":"baseline_and_alerts"}'
 code247_stage_telemetry_path="/api/v1/code247/stage-telemetry?tenant_id=${TENANT_ID}&app_id=code247&days=14"
+code247_run_timeline_path="/api/v1/code247/run-timeline?tenant_id=${TENANT_ID}&app_id=code247&days=14&jobs_limit=10&limit=100"
 
 read -r unauthorized_status unauthorized_body <<<"$(request GET "${BAD_TOKEN}" "${dashboard_path}")"
 assert_status "${unauthorized_status}" "403" "${unauthorized_body}"
@@ -204,6 +205,10 @@ read -r code247_stage_telemetry_status code247_stage_telemetry_body <<<"$(reques
 assert_status "${code247_stage_telemetry_status}" "200" "${code247_stage_telemetry_body}"
 assert_success_body "${code247_stage_telemetry_body}"
 
+read -r code247_run_timeline_status code247_run_timeline_body <<<"$(request GET "${READ_TOKEN}" "${code247_run_timeline_path}")"
+assert_status "${code247_run_timeline_status}" "200" "${code247_run_timeline_body}"
+assert_success_body "${code247_run_timeline_body}"
+
 read -r ops_post_forbidden_status ops_post_forbidden_body <<<"$(request POST "${READ_TOKEN}" "${ops_post_path}" "${ops_post_body}")"
 assert_status "${ops_post_forbidden_status}" "403" "${ops_post_forbidden_body}"
 
@@ -225,6 +230,7 @@ cat >"${REPORT_PATH}" <<EOF
     "fuel_reconciliation": ${reconciliation_status},
     "fuel_ops_get": ${ops_get_status},
     "code247_stage_telemetry": ${code247_stage_telemetry_status},
+    "code247_run_timeline": ${code247_run_timeline_status},
     "fuel_ops_post_forbidden_without_ack_scope": ${ops_post_forbidden_status},
     "fuel_ops_post": ${ops_post_status}
   }
@@ -239,6 +245,7 @@ rm -f \
   "${reconciliation_body}" \
   "${ops_get_body}" \
   "${code247_stage_telemetry_body}" \
+  "${code247_run_timeline_body}" \
   "${ops_post_forbidden_body}" \
   "${ops_post_body_file}"
 

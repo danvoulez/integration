@@ -32,6 +32,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `GET /api/v1/traces/:traceId` | Trace tree by causal ID |
 | `GET /api/v1/runs/:runId` | Run projection |
 | `GET /api/v1/code247/stage-telemetry` | Latência/custo por etapa do pipeline |
+| `GET /api/v1/code247/run-timeline` | Timeline operacional do pipeline por job |
 | `GET /api/v1/fuel/dashboard` | Fuel metrics |
 | `GET /api/v1/dashboards/summary` | Operator summary |
 | `GET /api/health` | Health check |
