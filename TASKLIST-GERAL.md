@@ -61,6 +61,14 @@ Sem pendências abertas nesta frente.
 - [ ] PX-003: Nenhum merge sem teste local + evidência anexada no PR (`comando`, `resultado`, `impacto`).
 - [ ] PX-004: Integração em 2 janelas fixas por dia (meio do dia e fim do dia), sem rebase destrutivo.
 
+**Procedimento fixo (todos os agentes):**
+1. Criar branch de trabalho (`git checkout -b codex/<agent-id>-<topic>`).
+2. Implementar apenas o escopo do agente (sem editar área alheia).
+3. Executar comandos obrigatórios do agente localmente.
+4. Salvar evidências em `artifacts/` (logs/relatórios dos comandos).
+5. Abrir PR com checklist dos itens fechados + evidências anexadas.
+6. Só marcar item `[x]` após comando verde + evidência publicada no PR.
+
 ### 2.2 Agent A - Runtime Integrity (Code247 + Edge-Control) [Existencial]
 **Escopo:** `code247.logline.world/*`, `edge-control.logline.world/*`, `.github/workflows/*` (somente gates críticos).  
 **Objetivo:** impedir regressão de estado, replay e indisponibilidade operacional no plano de execução.
@@ -73,6 +81,19 @@ Sem pendências abertas nesta frente.
 
 **DoD Agent A:** runtime fail-closed, sem bypass de estado e sem superfícies críticas com comportamento ambíguo sob falha.
 
+**Execução exata (ordem obrigatória):**
+1. Branch: `codex/agent-a-runtime-integrity`.
+2. Fechar `A-101/A-102`: aplicar `merge_group` + gate de security scan obrigatório para repos críticos.
+3. Fechar `A-103`: revisar e bloquear qualquer caminho de escrita que permita `Done` sem evidência.
+4. Fechar `A-104`: implementar `ECTRL-001/002/003` em `edge-control` (eviction/TTL rate-limit, erro correto na idempotência, JWKS cache+timeout).
+5. Fechar `A-105`: validar `edge-control` estável no LAB 8GB com configuração operacional final.
+6. Rodar comandos obrigatórios:
+7. `cargo test --manifest-path code247.logline.world/Cargo.toml`
+8. `cargo test --manifest-path edge-control.logline.world/Cargo.toml`
+9. `./scripts/verify-code247-state-governance.sh`
+10. `./scripts/smoke-code247-stage-lease.sh`
+11. Evidência mínima no PR: saída resumida dos comandos + diff de hardening + riscos residuais.
+
 ### 2.3 Agent B - Security Surfaces (Auth + Obs API) [Existencial]
 **Escopo:** `obs-api.logline.world/app/api/*`, `obs-api.logline.world/lib/auth/*`, `llm-gateway.logline.world/*` (somente auth).  
 **Objetivo:** eliminar exposição de credenciais/sessões e garantir autorização consistente por tenant/app/scope.
@@ -83,6 +104,17 @@ Sem pendências abertas nesta frente.
 - [ ] B-104: Fechar `OBS-002` (alertas operacionais com ack/resolution auditável, sem buracos de auth).
 
 **DoD Agent B:** nenhuma rota crítica expõe sessão/dados sensíveis sem auth e toda escrita sensível exige contexto autorizado.
+
+**Execução exata (ordem obrigatória):**
+1. Branch: `codex/agent-b-security-surfaces`.
+2. Fechar `B-101`: consolidar auth service-to-service em JWT+scope (eliminar exceções legadas fora de compat controlado).
+3. Fechar `B-102`: corrigir leak/replay em `cli/auth/challenge*` e reforçar membership em `/apps/:appId/keys/user`.
+4. Fechar `B-103`: remover enumeração indevida em `tenant/resolve` e endurecer criação de challenge (TTL server-side + rate-limit + cleanup).
+5. Fechar `B-104`: garantir `OBS-002` com ack/resolution auditável e protegido por auth/scope.
+6. Rodar comandos obrigatórios (com secrets via Doppler):
+7. `doppler run --project logline-ecosystem --config dev -- ./scripts/smoke-obs-api-auth.sh`
+8. `doppler run --project logline-ecosystem --config dev -- ./scripts/smoke-llm-gateway-auth.sh`
+9. Evidência mínima no PR: payloads de antes/depois das rotas corrigidas + relatório de smoke autenticado.
 
 ### 2.4 Agent C - Integration Contracts + Severe Gates [Existencial]
 **Escopo:** `logic.logline.world/*`, `scripts/*`, `contracts/*`, OpenAPI/catálogos canônicos.  
@@ -95,6 +127,18 @@ Sem pendências abertas nesta frente.
 - [ ] C-105: Fechar `LOGIC-013` (relatório operacional consolidado com round-trip por intenção).
 
 **DoD Agent C:** um comando executa/verifica o ciclo crítico e bloqueia merge quando contratos/gates essenciais falham.
+
+**Execução exata (ordem obrigatória):**
+1. Branch: `codex/agent-c-integration-gates`.
+2. Fechar `C-101`: consolidar round-trip único e rastreável (`manifest.intentions -> Code247 -> Linear -> pipeline -> PR/merge -> deploy`).
+3. Fechar `C-102`: corrigir drift de contratos OpenAPI/topologia.
+4. Fechar `C-103/C-104`: implementar cenários severos faltantes (`TST-011..015`) e gate obrigatório `TST-GATE-004`.
+5. Fechar `C-105`: ampliar relatório operacional consolidado com round-trip por intenção.
+6. Rodar comandos obrigatórios:
+7. `./scripts/validate-contracts.sh`
+8. `./scripts/integration-severe.sh`
+9. `./scripts/verify-operations.sh`
+10. Evidência mínima no PR: `artifacts/operations-verify-report.{json,md}` + `artifacts/integration-severe-report.json`.
 
 **Fora do escopo existencial deste ciclo (luxo/defer):** `UI-*`, `VVC-*`, `VVP-*`, `ONB-*`, e `OBS-001` orientado a consumo visual.
 
