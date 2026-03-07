@@ -61,35 +61,42 @@ Sem pendências abertas nesta frente.
 - [ ] PX-003: Nenhum merge sem teste local + evidência anexada no PR (`comando`, `resultado`, `impacto`).
 - [ ] PX-004: Integração em 2 janelas fixas por dia (meio do dia e fim do dia), sem rebase destrutivo.
 
-### 2.2 Agent A - Code247 + Edge Governance Hardening
-**Escopo:** `code247.logline.world/*`, `edge-control.logline.world/*` (+ ajustes mínimos em contrato quando necessário)  
-**Objetivo:** tornar Code247 e o control-plane aptos para execução contínua com segurança operacional.
+### 2.2 Agent A - Runtime Integrity (Code247 + Edge-Control) [Existencial]
+**Escopo:** `code247.logline.world/*`, `edge-control.logline.world/*`, `.github/workflows/*` (somente gates críticos).  
+**Objetivo:** impedir regressão de estado, replay e indisponibilidade operacional no plano de execução.
 
-- [x] A-001: `C247-RDY-001` JWT+scope completo nas rotas críticas.
-- [ ] A-005: `C247-RDY-007/008` merge queue + security scan obrigatório para repos críticos.
-- [x] A-007: `C247-RDY-012` timeline operacional do `Code247` validada no obs-api (telemetria de etapa exposta em `/api/v1/code247/stage-telemetry`).
+- [ ] A-101: Fechar `C247-RDY-007` (merge queue `merge_group`) nos repositórios críticos.
+- [ ] A-102: Fechar `C247-RDY-008` + `G-008` (security scan obrigatório pré-merge substantial).
+- [ ] A-103: Fechar `G-007` (enforcement completo de `Done` sem bypass em qualquer escrita).
+- [ ] A-104: Entregar `ECTRL-001/002/003` (rate-limit bounded, idempotência com erro correto, JWKS cache+timeout).
+- [ ] A-105: Fechar `G-015` (edge-control oficial em modo operacional estável no LAB 8GB).
 
-**DoD Agent A:** estado, merge policy e control-plane protegidos por validação central + testes verdes + logs auditáveis.
+**DoD Agent A:** runtime fail-closed, sem bypass de estado e sem superfícies críticas com comportamento ambíguo sob falha.
 
-### 2.3 Agent B - Fuel + Obs Economics
-**Escopo:** `llm-gateway.logline.world/*`, `logic.logline.world/supabase/migrations/*`, `obs-api.logline.world/*` para Fuel/telemetria econômica.  
-**Objetivo:** fechar a camada econômica com alertas, calibração e observabilidade útil para operação.
+### 2.3 Agent B - Security Surfaces (Auth + Obs API) [Existencial]
+**Escopo:** `obs-api.logline.world/app/api/*`, `obs-api.logline.world/lib/auth/*`, `llm-gateway.logline.world/*` (somente auth).  
+**Objetivo:** eliminar exposição de credenciais/sessões e garantir autorização consistente por tenant/app/scope.
 
-Sem pendências abertas no escopo do Agent B.
+- [ ] B-101: Fechar `G-004` (auth service-to-service única com JWT + escopo de projeto).
+- [ ] B-102: Fechar `OBS-003/004/005` (challenge leakage/replay + membership enforcement em user keys).
+- [ ] B-103: Fechar `OBS-006/007` (tenant resolve sem enumeração indevida + creation controls no challenge).
+- [ ] B-104: Fechar `OBS-002` (alertas operacionais com ack/resolution auditável, sem buracos de auth).
 
-**DoD Agent B:** alertas e calibração de Fuel operacionais, com segmentação por policy e visibilidade útil no obs-api.
+**DoD Agent B:** nenhuma rota crítica expõe sessão/dados sensíveis sem auth e toda escrita sensível exige contexto autorizado.
 
-### 2.4 Agent C - Logic CLI + Integration Harness
-**Escopo:** `logic.logline.world/*`, `scripts/*`, `contracts/*` (somente catálogo/cookbook/harness), suporte a `obs-api` para testes de contrato.  
-**Objetivo:** transformar CLI em backbone operacional e fechar test harness severo de integração.
+### 2.4 Agent C - Integration Contracts + Severe Gates [Existencial]
+**Escopo:** `logic.logline.world/*`, `scripts/*`, `contracts/*`, OpenAPI/catálogos canônicos.  
+**Objetivo:** garantir integração ponta-a-ponta com contratos coerentes e gate severo bloqueando regressão.
 
-- [ ] C-001: `G-001` round-trip único `manifest.intentions -> Code247 -> Linear -> pipeline -> PR/merge -> deploy` com rastreabilidade fim-a-fim.
-- [ ] C-002: `G-004` auth service-to-service unificada (JWT + escopo de projeto) em todos os serviços centrais.
-- [ ] C-003: `G-030` alinhar contratos OpenAPI com topologia canônica e remover drift de host/porta.
-- [ ] C-004: `OBS-001` backend de round-trip por intenção para consumo futuro da UI.
-- [x] C-006: `LLM-012` smoke autenticado do gateway cobrindo JWT e compat mode até sunset.
+- [ ] C-101: Fechar `G-001` (round-trip único rastreável fim-a-fim).
+- [ ] C-102: Fechar `G-030` (OpenAPI/topologia sem drift de host/porta).
+- [ ] C-103: Fechar `TST-011/012/013` (multi-instance edge-control + caos Linear/GitHub + isolamento policy_version).
+- [ ] C-104: Fechar `TST-014/015` + `TST-GATE-004` (security regressions viram gate obrigatório).
+- [ ] C-105: Fechar `LOGIC-013` (relatório operacional consolidado com round-trip por intenção).
 
-**DoD Agent C:** execução de ponta a ponta acionável por um comando, com relatório auditável.
+**DoD Agent C:** um comando executa/verifica o ciclo crítico e bloqueia merge quando contratos/gates essenciais falham.
+
+**Fora do escopo existencial deste ciclo (luxo/defer):** `UI-*`, `VVC-*`, `VVP-*`, `ONB-*`, e `OBS-001` orientado a consumo visual.
 
 ## 3) Testes Severos de Integração (pendências novas)
 
